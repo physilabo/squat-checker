@@ -1,0 +1,1727 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>スクワットフォームチェッカー</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;700&family=DM+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0a0f1e;
+    --surface: #111827;
+    --surface2: #1a2235;
+    --accent: #00d4aa;
+    --accent2: #ff6b6b;
+    --accent3: #ffd166;
+    --text: #e8edf5;
+    --text-dim: #6b7a99;
+    --good: #00d4aa;
+    --warn: #ffd166;
+    --bad: #ff6b6b;
+    --border: rgba(255,255,255,0.07);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans JP', sans-serif;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,15,30,0.95);
+    backdrop-filter: blur(10px);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; letter-spacing: 2px;
+    color: var(--accent); text-transform: uppercase;
+  }
+  .logo-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
+
+  .status-badge {
+    display: flex; align-items: center; gap: 5px;
+    padding: 5px 12px; border-radius: 20px;
+    border: 1px solid var(--border);
+    font-size: 11px; color: var(--text-dim);
+    font-family: 'DM Mono', monospace;
+  }
+  .status-badge.active { border-color: var(--accent); color: var(--accent); }
+  .status-indicator { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .status-badge.active .status-indicator { animation: pulse 1s infinite; }
+
+  main {
+    flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  .camera-area {
+    position: relative; background: #000;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; width: 100%;
+    aspect-ratio: 3/4; max-height: 50vh;
+  }
+
+  #videoElement { width: 100%; height: 100%; object-fit: contain; background: #000; }
+  #outputCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+
+  .camera-overlay { position: absolute; inset: 0; pointer-events: none; }
+
+  /* Countdown overlay */
+  #countdownOverlay {
+    position: absolute; inset: 0; z-index: 60;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.55);
+    pointer-events: none;
+  }
+  #countdownOverlay.active { display: flex; }
+  .countdown-num {
+    font-size: clamp(80px, 22vw, 140px);
+    font-weight: 900;
+    color: #fff;
+    text-shadow: 0 0 24px var(--accent), 0 4px 16px rgba(0,0,0,0.8);
+    line-height: 1;
+    animation: countPulse 0.9s ease-out;
+  }
+  @keyframes countPulse {
+    0%   { transform: scale(1.4); opacity: 0; }
+    30%  { transform: scale(1.0); opacity: 1; }
+    80%  { transform: scale(1.0); opacity: 1; }
+    100% { transform: scale(0.8); opacity: 0; }
+  }
+
+  /* Position-check overlay */
+  #posCheckOverlay {
+    position: absolute; inset: 0; z-index: 55;
+    display: none; flex-direction: column;
+    background: rgba(0,0,0,0.50);
+    pointer-events: auto;
+  }
+  #posCheckOverlay.active { display: flex; }
+
+  /* Top bar – floated above silhouette */
+  .pos-check-header {
+    position: relative; z-index: 2;
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; flex-shrink: 0;
+    background: rgba(0,0,0,0.55);
+  }
+  .pos-check-top { flex: 1; min-width: 0; }
+  .pos-check-title {
+    color: #fff; font-size: 13px; font-weight: 700;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.9);
+  }
+  /* Right-side action column: start btn on top, cam-switch below */
+  .pos-check-actions {
+    display: flex; flex-direction: column; gap: 5px;
+    align-items: stretch; flex-shrink: 0;
+  }
+  /* Camera-switch button */
+  .pos-cam-switch {
+    flex-shrink: 0;
+    background: rgba(0,229,255,0.12);
+    border: 1.5px solid var(--accent);
+    color: var(--accent); border-radius: 18px;
+    padding: 6px 11px; font-size: 11px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; gap: 4px;
+    font-family: 'Noto Sans JP', sans-serif;
+    pointer-events: auto;
+    transition: background 0.15s;
+  }
+  .pos-cam-switch:active { background: rgba(0,229,255,0.28); transform: scale(0.96); }
+  .pos-cam-switch:disabled { opacity: 0.45; }
+  /* Start button – compact, in header */
+  .pos-check-btn {
+    flex-shrink: 0;
+    background: var(--accent); color: #000;
+    border: none; border-radius: 18px;
+    padding: 7px 14px; font-size: 12px; font-weight: 800;
+    cursor: pointer; letter-spacing: 0.2px;
+    font-family: 'Noto Sans JP', sans-serif;
+    box-shadow: 0 3px 12px rgba(0,229,255,0.45);
+    pointer-events: auto; white-space: nowrap;
+  }
+  .pos-check-btn:active { opacity: 0.8; transform: scale(0.96); }
+
+  /* Silhouette fills the ENTIRE overlay, behind header */
+  .pos-check-zone {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .pos-check-zone svg { height: 100%; width: auto; max-width: 100%; }
+
+  /* Guide chips overlaid at bottom */
+  .pos-check-guide {
+    position: absolute; bottom: 8px; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: center;
+    gap: 5px; padding: 0 10px; pointer-events: none;
+  }
+  .pos-guide-chip {
+    background: rgba(0,0,0,0.62);
+    border: 1px solid rgba(0,229,255,0.30);
+    border-radius: 14px; padding: 3px 9px;
+    font-size: 10px; color: rgba(255,255,255,0.88);
+    white-space: nowrap;
+  }
+  .pos-guide-chip strong { color: var(--accent); font-weight: 700; }
+  .corner { position: absolute; width: 20px; height: 20px; }
+  .corner::before, .corner::after { content: ''; position: absolute; background: var(--accent); }
+  .corner::before { width: 2px; height: 100%; }
+  .corner::after { width: 100%; height: 2px; }
+  .corner.tl { top: 12px; left: 12px; }
+  .corner.tr { top: 12px; right: 12px; transform: scaleX(-1); }
+  .corner.bl { bottom: 12px; left: 12px; transform: scaleY(-1); }
+  .corner.br { bottom: 12px; right: 12px; transform: scale(-1); }
+
+  .scanline {
+    position: absolute; left: 12px; right: 12px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0;
+  }
+  .scanline.active { opacity: .6; animation: scan 3s linear infinite; }
+  @keyframes scan { 0%{top:10%} 100%{top:90%} }
+
+  .feedback-overlay {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    pointer-events: none; width: 90%;
+  }
+  .phase-badge {
+    padding: 6px 16px; border-radius: 20px;
+    font-size: 13px; font-weight: 700; letter-spacing: 1px;
+    background: rgba(0,0,0,0.75); border: 1px solid var(--accent); color: var(--accent);
+    backdrop-filter: blur(8px); white-space: nowrap;
+  }
+  .alert-box {
+    padding: 8px 14px; border-radius: 10px;
+    font-size: 12px; font-weight: 500;
+    background: rgba(255,107,107,0.15); border: 1px solid var(--bad); color: var(--bad);
+    backdrop-filter: blur(8px); max-width: 90%; text-align: center; display: none;
+  }
+  .alert-box.show { display: block; }
+
+  /* Progress bar overlay */
+  .progress-overlay {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-radius: 20px;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    font-size: 12px; font-family: 'DM Mono', monospace;
+    color: var(--text); pointer-events: none; z-index: 5;
+  }
+  .progress-overlay .prog-bar {
+    width: 80px; height: 4px; border-radius: 2px; background: var(--surface2); overflow: hidden;
+  }
+  .progress-overlay .prog-fill {
+    height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s;
+  }
+
+  /* Start screen */
+  .start-screen {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px; background: var(--bg); padding: 20px;
+    z-index: 20;
+  }
+  .start-icon { font-size: 56px; }
+  .start-title { font-size: 18px; font-weight: 700; }
+  .start-sub { font-size: 12px; color: var(--text-dim); text-align: center; max-width: 280px; line-height: 1.7; }
+
+  .rep-setter {
+    display: flex; align-items: center; gap: 16px;
+    margin: 8px 0;
+  }
+  .rep-setter button {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--accent); font-size: 22px; font-weight: 700;
+    cursor: pointer; font-family: 'DM Mono', monospace;
+    display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .rep-setter button:active { background: var(--accent); color: var(--bg); }
+  .rep-setter .rep-target-num {
+    font-size: 36px; font-weight: 700; font-family: 'DM Mono', monospace;
+    color: var(--accent); min-width: 50px; text-align: center;
+  }
+  .rep-setter-label { font-size: 12px; color: var(--text-dim); }
+
+  .btn-start {
+    padding: 14px 32px; border-radius: 8px;
+    background: var(--accent); border: none;
+    color: #0a0f1e; font-size: 15px; font-weight: 700;
+    cursor: pointer; font-family: 'Noto Sans JP', sans-serif;
+    display: flex; align-items: center; gap: 8px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-start:active { transform: scale(0.97); }
+
+  .btn-camera-switch {
+    display: none !important; /* 削除済み（立ち位置確認画面のボタンに統合） */
+    position: absolute; top: 12px; left: 12px;
+    width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(0,0,0,0.6); border: 1px solid var(--border);
+    color: white; font-size: 16px;
+    align-items: center; justify-content: center;
+    cursor: pointer; z-index: 10; backdrop-filter: blur(4px);
+    -webkit-tap-highlight-color: transparent; pointer-events: auto;
+  }
+
+  .fps-badge {
+    position: absolute; top: 12px; right: 12px;
+    padding: 3px 8px; border-radius: 6px;
+    background: rgba(0,0,0,.6); border: 1px solid var(--border);
+    font-size: 10px; font-family: 'DM Mono', monospace; color: var(--text-dim);
+  }
+
+  /* Bottom Panel */
+  .bottom-panel {
+    flex: 1; background: var(--surface);
+    border-top: 1px solid var(--border);
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  .tab-nav {
+    display: flex; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--surface); z-index: 10;
+  }
+  .tab-btn {
+    flex: 1; padding: 10px 8px; background: none; border: none;
+    color: var(--text-dim); font-size: 12px; font-weight: 500;
+    font-family: 'Noto Sans JP', sans-serif; cursor: pointer;
+    border-bottom: 2px solid transparent;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .panel-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .panel-section:last-child { border-bottom: none; }
+  .section-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--text-dim); margin-bottom: 10px; font-family: 'DM Mono', monospace;
+  }
+
+  .score-row { display: flex; align-items: center; gap: 14px; }
+  .score-ring { width: 60px; height: 60px; position: relative; flex-shrink: 0; }
+  .score-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .score-ring circle { fill: none; stroke-width: 5; stroke-linecap: round; }
+  .score-ring .track { stroke: var(--surface2); }
+  .score-ring .fill { stroke: var(--accent); transition: stroke-dashoffset .6s ease; }
+  .score-num {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 700; font-family: 'DM Mono', monospace;
+  }
+  .score-detail { flex: 1; min-width: 0; }
+  .score-label { font-size: 12px; color: var(--text-dim); margin-bottom: 2px; }
+  .score-comment { font-size: 13px; font-weight: 500; line-height: 1.4; }
+
+  .check-list { display: flex; flex-direction: column; gap: 6px; }
+  .check-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 8px;
+    background: var(--surface2); border: 1px solid transparent;
+  }
+  .check-item.good { border-color: rgba(0,212,170,.25); background: rgba(0,212,170,.07); }
+  .check-item.warn { border-color: rgba(255,209,102,.25); background: rgba(255,209,102,.07); }
+  .check-item.bad  { border-color: rgba(255,107,107,.25); background: rgba(255,107,107,.07); }
+  .check-icon { font-size: 16px; flex-shrink: 0; }
+  .check-body { flex: 1; min-width: 0; }
+  .check-name { font-size: 12px; font-weight: 500; margin-bottom: 1px; }
+  .check-val { font-size: 10px; color: var(--text-dim); font-family: 'DM Mono', monospace; }
+  .check-status { font-size: 10px; font-weight: 600; letter-spacing: .5px; flex-shrink: 0; }
+  .good .check-status { color: var(--good); }
+  .warn .check-status { color: var(--warn); }
+  .bad  .check-status { color: var(--bad); }
+
+  .angle-meters { display: flex; flex-direction: column; gap: 10px; }
+  .angle-head { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .angle-name { font-size: 11px; color: var(--text-dim); }
+  .angle-val { font-size: 12px; font-family: 'DM Mono', monospace; font-weight: 500; }
+  .angle-bar-bg { height: 5px; border-radius: 3px; background: var(--surface2); position: relative; }
+  .angle-bar-fill {
+    height: 100%; border-radius: 3px; background: var(--accent); transition: width .3s; position: relative;
+  }
+  .angle-bar-fill::after {
+    content: ''; position: absolute; right: -1px; top: 50%; transform: translateY(-50%);
+    width: 8px; height: 8px; border-radius: 50%; background: white;
+    box-shadow: 0 0 4px rgba(0,212,170,.6);
+  }
+  .angle-range { display: flex; justify-content: space-between; margin-top: 3px; }
+  .angle-range span { font-size: 9px; color: var(--text-dim); font-family: 'DM Mono', monospace; }
+
+  .rep-row { display: flex; align-items: center; gap: 16px; }
+  .rep-counter { display: flex; align-items: baseline; gap: 6px; }
+  .rep-num { font-size: 40px; font-weight: 700; font-family: 'DM Mono', monospace; color: var(--accent); line-height: 1; }
+  .rep-unit { font-size: 14px; color: var(--text-dim); }
+  .rep-phase { font-size: 11px; color: var(--text-dim); }
+
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; }
+  .stat-box { background: var(--surface2); border-radius: 8px; padding: 10px 6px; text-align: center; }
+  .stat-val { font-size: 18px; font-weight: 700; font-family: 'DM Mono', monospace; color: var(--accent); }
+  .stat-label { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+
+  .bottom-panel::-webkit-scrollbar { width: 3px; }
+  .bottom-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Result Modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(6px);
+    display: none; align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--surface); border-radius: 16px;
+    max-width: 400px; width: 100%; max-height: 90vh;
+    overflow-y: auto; padding: 24px;
+    border: 1px solid var(--border);
+  }
+  .modal-title {
+    font-size: 18px; font-weight: 700; text-align: center; margin-bottom: 4px;
+  }
+  .modal-subtitle {
+    font-size: 12px; color: var(--text-dim); text-align: center; margin-bottom: 20px;
+  }
+
+  .modal-score-ring {
+    width: 100px; height: 100px; position: relative; margin: 0 auto 16px;
+  }
+  .modal-score-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .modal-score-ring circle { fill: none; stroke-width: 6; stroke-linecap: round; }
+  .modal-score-ring .track { stroke: var(--surface2); }
+  .modal-score-ring .fill { stroke: var(--accent); transition: stroke-dashoffset 1s ease; }
+  .modal-score-num {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .modal-score-num .num { font-size: 32px; font-weight: 700; font-family: 'DM Mono', monospace; }
+  .modal-score-num .label { font-size: 10px; color: var(--text-dim); }
+
+  .modal-comment {
+    text-align: center; font-size: 14px; font-weight: 500;
+    margin-bottom: 20px; line-height: 1.5;
+  }
+
+  .modal-stats {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 20px;
+  }
+  .modal-stat {
+    background: var(--surface2); border-radius: 10px; padding: 12px 8px; text-align: center;
+  }
+  .modal-stat .val { font-size: 24px; font-weight: 700; font-family: 'DM Mono', monospace; }
+  .modal-stat .lbl { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+
+  .modal-checks { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+  .modal-check {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 8px; background: var(--surface2);
+  }
+  .modal-check-icon { font-size: 14px; flex-shrink: 0; }
+  .modal-check-name { font-size: 12px; flex: 1; }
+  .modal-check-score {
+    font-size: 12px; font-weight: 700; font-family: 'DM Mono', monospace; flex-shrink: 0;
+  }
+
+  .modal-advice {
+    background: rgba(0,212,170,0.08); border: 1px solid rgba(0,212,170,0.2);
+    border-radius: 10px; padding: 14px; margin-bottom: 20px;
+  }
+  .modal-advice-title { font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+  .modal-advice-text { font-size: 12px; line-height: 1.6; color: var(--text); }
+
+  .modal-actions { display: flex; gap: 10px; }
+  .btn-modal {
+    flex: 1; padding: 12px; border-radius: 8px; border: none;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+    font-family: 'Noto Sans JP', sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-modal.primary { background: var(--accent); color: var(--bg); }
+  .btn-modal.secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+  @media (min-width: 769px) {
+    main { flex-direction: row; height: calc(100vh - 45px); }
+    .camera-area { flex: 1; aspect-ratio: auto; max-height: none; height: 100%; }
+    .bottom-panel { width: 340px; flex: none; border-top: none; border-left: 1px solid var(--border); }
+  }
+
+  /* ── Abort menu overlay ──────────────── */
+  .abort-menu {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px;
+    background: rgba(10,15,30,0.93);
+    z-index: 50; padding: 24px;
+  }
+  .abort-menu.show { display: flex; }
+  .abort-title { font-size: 17px; font-weight: 700; }
+  .abort-sub { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  .abort-btn {
+    width: 100%; max-width: 260px;
+    padding: 14px; border-radius: 8px; border: none;
+    font-size: 14px; font-weight: 700;
+    cursor: pointer; font-family: 'Noto Sans JP', sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    pointer-events: auto;
+  }
+
+  /* ── Check HUD overlay (left strip) ─── */
+  .check-hud {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    pointer-events: none;
+  }
+  .hud-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(8,12,28,0.90);
+    border-radius: 6px;
+    padding: 6px 10px 6px 8px;
+    border-left: 4px solid var(--text-dim);
+    min-width: 96px;
+  }
+  .hud-item.good { border-left-color: var(--good); background: rgba(0,50,25,0.92); }
+  .hud-item.warn { border-left-color: var(--warn); background: rgba(50,35,0,0.92); }
+  .hud-item.bad  { border-left-color: var(--bad);  background: rgba(55,8,8,0.92);  }
+  .hud-name {
+    font-size: 13px;
+    color: rgba(255,255,255,0.92);
+    flex: 1;
+    white-space: nowrap;
+  }
+  .hud-status {
+    font-size: 20px;
+    font-family: 'DM Mono', monospace;
+    font-weight: 900;
+    flex-shrink: 0;
+    color: var(--text-dim);
+    line-height: 1;
+  }
+  .hud-item.good .hud-status { color: var(--good); }
+  .hud-item.warn .hud-status { color: var(--warn); }
+  .hud-item.bad  .hud-status { color: var(--bad); }
+
+  /* モバイル: カメラエリアを少し広く */
+  @media (max-width: 768px) {
+    .camera-area { max-height: 62vh; }
+  }
+
+  /* ── Profile modal ──────────────────────────────── */
+  .profile-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.88);
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .profile-overlay.hidden { display: none; }
+  .profile-modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px 20px;
+    width: 100%; max-width: 360px; max-height: 92vh; overflow-y: auto;
+  }
+  .profile-modal-title { font-size: 17px; font-weight: 700; margin-bottom: 3px; }
+  .profile-modal-sub   { font-size: 11px; color: var(--text-dim); margin-bottom: 20px; line-height: 1.6; }
+  .profile-field { margin-bottom: 14px; }
+  .profile-field label { display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 5px; }
+  .profile-field input, .profile-field select {
+    width: 100%; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-size: 14px; padding: 10px 12px;
+    font-family: 'Noto Sans JP', sans-serif; outline: none;
+    -webkit-appearance: none;
+  }
+  .profile-field input:focus, .profile-field select:focus { border-color: var(--accent); }
+  .profile-required { color: var(--bad); }
+  .profile-save-btn {
+    width: 100%; padding: 13px; border: none; border-radius: 10px;
+    background: var(--accent); color: #000; font-size: 15px; font-weight: 800;
+    cursor: pointer; font-family: 'Noto Sans JP', sans-serif; margin-top: 4px;
+  }
+  .profile-save-btn:active { opacity: 0.8; }
+  .profile-skip { display: block; text-align: center; margin-top: 10px;
+    font-size: 11px; color: var(--text-dim); cursor: pointer; }
+  .profile-note {
+    font-size: 10px; color: var(--text-dim); line-height: 1.7;
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+  }
+  /* Header profile button */
+  #profileBtn {
+    height: 30px; padding: 0 10px; border-radius: 16px;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-size: 11px; font-weight: 600;
+    cursor: pointer; font-family: 'Noto Sans JP', sans-serif;
+    display: flex; align-items: center; gap: 4px;
+    max-width: 90px; white-space: nowrap; overflow: hidden;
+  }
+  #profileBtn:active { opacity: 0.7; }
+
+  /* ── Fatigue rating in result modal ─────────────── */
+  .fatigue-section { padding: 14px 0 8px; }
+  .fatigue-label { font-size: 12px; color: var(--text-dim); text-align: center; margin-bottom: 10px; }
+  .fatigue-row { display: flex; justify-content: center; gap: 8px; }
+  .fatigue-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    cursor: pointer; opacity: 0.35; transition: opacity 0.15s, transform 0.1s;
+    background: none; border: none; padding: 4px; border-radius: 8px;
+    font-family: 'Noto Sans JP', sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .fatigue-btn .f-emoji { font-size: 26px; line-height: 1; }
+  .fatigue-btn .f-num { font-size: 9px; color: var(--text-dim); }
+  .fatigue-btn.active { opacity: 1; transform: scale(1.15); }
+  .fatigue-btn:hover  { opacity: 0.75; }
+
+  /* ── History tab ────────────────────────────────── */
+  .history-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .history-profile-info { font-size: 12px; color: var(--text-dim); }
+  .history-profile-id { color: var(--accent); font-weight: 700; font-size: 13px; }
+  .history-clear-btn {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-dim); border-radius: 8px;
+    padding: 4px 10px; font-size: 11px; cursor: pointer;
+    font-family: 'Noto Sans JP', sans-serif;
+  }
+  .history-empty { text-align: center; color: var(--text-dim); font-size: 13px; padding: 40px 0; line-height: 2; }
+  .history-list { display: flex; flex-direction: column; gap: 7px; }
+  .history-item {
+    background: var(--surface2); border-radius: 10px;
+    padding: 9px 12px; display: flex; align-items: center; gap: 10px;
+    border: 1px solid var(--border);
+  }
+  .history-score {
+    font-size: 22px; font-weight: 900; min-width: 44px; text-align: center;
+    font-family: 'DM Mono', monospace; line-height: 1;
+  }
+  .history-info { flex: 1; min-width: 0; }
+  .history-date { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; }
+  .history-reps { font-size: 12px; font-weight: 600; }
+  .history-right { text-align: right; }
+  .history-fatigue { font-size: 16px; }
+  .history-fatigue-lbl { font-size: 9px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="logo-dot"></div>Squat Form Checker</div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <button id="profileBtn" onclick="openProfileModal()">👤 <span id="profileBtnLabel">登録</span></button>
+    <button id="headerStopBtn" onclick="stopSession()"
+      style="padding:5px 12px;border-radius:16px;height:30px;
+             background:#1a0505;border:1.5px solid #ff6b6b;color:#ff6b6b;
+             font-size:12px;font-weight:700;cursor:pointer;
+             font-family:'Noto Sans JP',sans-serif;white-space:nowrap;
+             opacity:0;pointer-events:none;transition:opacity 0.2s;">
+      ⏹ 中止
+    </button>
+    <div class="status-badge" id="statusBadge">
+      <div class="status-indicator"></div>
+      <span id="statusText">待機中</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="camera-area">
+    <div class="start-screen" id="startScreen">
+      <div class="start-icon">🏋️</div>
+      <div class="start-title">スクワットフォームチェッカー</div>
+      <div class="start-sub">カメラを使ってリアルタイムでスクワットのフォームを解析します。全身が映るように撮影してください。</div>
+      <div class="rep-setter-label">目標回数</div>
+      <div class="rep-setter">
+        <button onclick="adjustTarget(-1)">-</button>
+        <div class="rep-target-num" id="targetNum">10</div>
+        <button onclick="adjustTarget(1)">+</button>
+      </div>
+      <button class="btn-start" onclick="startCamera()">📷 カメラを起動する</button>
+    </div>
+
+    <video id="videoElement" autoplay muted playsinline style="display:none"></video>
+    <canvas id="outputCanvas" style="display:none"></canvas>
+
+    <!-- Position check overlay -->
+    <div id="posCheckOverlay">
+      <!-- Top bar: title left / actions right (start btn above, cam-switch below) -->
+      <div class="pos-check-header">
+        <div class="pos-check-top">
+          <div class="pos-check-title">📍 シルエットに合わせてください</div>
+        </div>
+        <div class="pos-check-actions">
+          <button class="pos-check-btn" onclick="hidePositionCheck()">準備完了 ▶</button>
+          <button class="pos-cam-switch" id="posCamSwitch" onclick="switchCameraInCheck()">🔄 <span id="posCamLabel">インカメラ</span></button>
+        </div>
+      </div>
+
+      <!-- Full-height silhouette -->
+      <div class="pos-check-zone">
+        <svg viewBox="0 0 60 160" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="30" cy="12" r="9" stroke="var(--accent)" stroke-width="2.2"/>
+          <line x1="30" y1="21" x2="30" y2="30" stroke="var(--accent)" stroke-width="2.2"/>
+          <line x1="9" y1="30" x2="51" y2="30" stroke="var(--good)" stroke-width="2.8"/>
+          <circle cx="9"  cy="30" r="2.8" fill="var(--good)" stroke="none"/>
+          <circle cx="51" cy="30" r="2.8" fill="var(--good)" stroke="none"/>
+          <line x1="9"  y1="30" x2="5"  y2="65" stroke="var(--accent)" stroke-width="2"/>
+          <line x1="51" y1="30" x2="55" y2="65" stroke="var(--accent)" stroke-width="2"/>
+          <line x1="30" y1="30" x2="30" y2="82" stroke="var(--accent)" stroke-width="2.2"/>
+          <line x1="14" y1="82" x2="46" y2="82" stroke="var(--accent)" stroke-width="2.2"/>
+          <circle cx="14" cy="82" r="2.8" fill="var(--accent)" stroke="none"/>
+          <circle cx="46" cy="82" r="2.8" fill="var(--accent)" stroke="none"/>
+          <line x1="14" y1="82" x2="11" y2="122" stroke="var(--accent)" stroke-width="2.2"/>
+          <line x1="46" y1="82" x2="49" y2="122" stroke="var(--accent)" stroke-width="2.2"/>
+          <circle cx="11" cy="122" r="3.2" fill="var(--warn)" stroke="none"/>
+          <circle cx="49" cy="122" r="3.2" fill="var(--warn)" stroke="none"/>
+          <line x1="11" y1="122" x2="9"  y2="150" stroke="var(--accent)" stroke-width="2.2"/>
+          <line x1="49" y1="122" x2="51" y2="150" stroke="var(--accent)" stroke-width="2.2"/>
+          <circle cx="9"  cy="150" r="2.5" fill="var(--accent)" stroke="none"/>
+          <circle cx="51" cy="150" r="2.5" fill="var(--accent)" stroke="none"/>
+          <line x1="3"  y1="150" x2="18" y2="150" stroke="var(--accent)" stroke-width="2.5"/>
+          <line x1="42" y1="150" x2="57" y2="150" stroke="var(--accent)" stroke-width="2.5"/>
+        </svg>
+
+        <!-- Setup guide overlaid at bottom -->
+        <div class="pos-check-guide">
+          <div class="pos-guide-chip">📏 高さ<strong>70〜90cm</strong></div>
+          <div class="pos-guide-chip">↗️ <strong>上向き</strong>に傾ける</div>
+          <div class="pos-guide-chip">📐 <strong>1.5〜2m</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Countdown overlay -->
+    <div id="countdownOverlay">
+      <div class="countdown-num" id="countdownNum">3</div>
+    </div>
+
+    <div class="camera-overlay" id="cameraOverlay" style="display:none">
+      <div class="corner tl"></div><div class="corner tr"></div>
+      <div class="corner bl"></div><div class="corner br"></div>
+      <div class="scanline" id="scanline"></div>
+      <div class="fps-badge" id="fpsBadge">-- fps</div>
+
+      <div class="progress-overlay" id="progressOverlay" style="display:none">
+        <span id="progressText">0 / 10</span>
+        <div class="prog-bar"><div class="prog-fill" id="progressFill" style="width:0%"></div></div>
+      </div>
+      <div class="feedback-overlay">
+        <div class="phase-badge" id="phaseBadge">準備中...</div>
+        <div class="alert-box" id="alertBox"></div>
+      </div>
+
+      <!-- Compact HUD: check items on left side -->
+      <div class="check-hud" id="checkHud">
+        <div class="hud-item" id="hud-face-forward"><span class="hud-name">顔の向き</span><span class="hud-status" id="hudst-face-forward">--</span></div>
+        <div class="hud-item" id="hud-trunk-tilt"><span class="hud-name">体幹傾斜</span><span class="hud-status" id="hudst-trunk-tilt">--</span></div>
+        <div class="hud-item" id="hud-pelvis-rotation"><span class="hud-name">骨盤回旋</span><span class="hud-status" id="hudst-pelvis-rotation">--</span></div>
+        <div class="hud-item" id="hud-foot-contact"><span class="hud-name">足底接地</span><span class="hud-status" id="hudst-foot-contact">--</span></div>
+        <div class="hud-item" id="hud-pelvis-tilt"><span class="hud-name">骨盤前傾</span><span class="hud-status" id="hudst-pelvis-tilt">--</span></div>
+        <div class="hud-item" id="hud-smoothness"><span class="hud-name">スムーズ</span><span class="hud-status" id="hudst-smoothness">--</span></div>
+        <div class="hud-item" id="hud-trunk-shin"><span class="hud-name">体幹/下腿</span><span class="hud-status" id="hudst-trunk-shin">--</span></div>
+        <div class="hud-item" id="hud-knee-toe"><span class="hud-name">膝/つま先</span><span class="hud-status" id="hudst-knee-toe">--</span></div>
+      </div>
+    </div>
+
+    <!-- Abort menu -->
+    <div class="abort-menu" id="abortMenu">
+      <div class="abort-title">セッションを中止しますか？</div>
+      <div class="abort-sub" id="abortRepInfo">現在 0 回完了</div>
+      <button class="abort-btn" style="background:var(--accent);color:var(--bg)" onclick="confirmAbort()">📊 結果を見る</button>
+      <button class="abort-btn" style="background:var(--surface2);color:var(--text);border:1px solid var(--border)" onclick="resetToStart()">🔄 やり直す</button>
+      <button class="abort-btn" style="background:transparent;color:var(--text-dim);border:1px solid var(--border)" onclick="closeAbortMenu()">▶ 続ける</button>
+    </div>
+  </div>
+
+  <div class="bottom-panel">
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="switchTab('check')">チェック</button>
+      <button class="tab-btn" onclick="switchTab('angle')">角度</button>
+      <button class="tab-btn" onclick="switchTab('stats')">統計</button>
+      <button class="tab-btn" onclick="switchTab('history')">履歴</button>
+    </div>
+
+    <div class="tab-content active" id="tab-check">
+      <div class="panel-section">
+        <div class="score-row">
+          <div class="score-ring">
+            <svg viewBox="0 0 72 72">
+              <circle class="track" cx="36" cy="36" r="30"/>
+              <circle class="fill" id="scoreCircle" cx="36" cy="36" r="30" stroke-dasharray="188.5" stroke-dashoffset="188.5"/>
+            </svg>
+            <div class="score-num" id="scoreNum">--</div>
+          </div>
+          <div class="score-detail">
+            <div class="score-label">フォームスコア</div>
+            <div class="score-comment" id="scoreComment">カメラを起動してください</div>
+          </div>
+        </div>
+        <!-- Panel start button -->
+        <div id="panelStartBtn" style="padding:12px 0 4px">
+          <button class="btn-start" onclick="startCamera()" style="width:100%;justify-content:center">📷 カメラを起動する</button>
+        </div>
+      </div>
+      <div class="panel-section">
+        <div class="section-label">チェック項目</div>
+        <div class="check-list">
+          <div class="check-item" id="check-face-forward"><div class="check-icon">👤</div><div class="check-body"><div class="check-name">顔は前を向く</div><div class="check-val" id="val-face-forward">測定中...</div></div><div class="check-status" id="status-face-forward">--</div></div>
+          <div class="check-item" id="check-trunk-tilt"><div class="check-icon">🧍</div><div class="check-body"><div class="check-name">体幹が左右に傾かない</div><div class="check-val" id="val-trunk-tilt">測定中...</div></div><div class="check-status" id="status-trunk-tilt">--</div></div>
+          <div class="check-item" id="check-pelvis-rotation"><div class="check-icon">🔄</div><div class="check-body"><div class="check-name">骨盤回旋なし</div><div class="check-val" id="val-pelvis-rotation">測定中...</div></div><div class="check-status" id="status-pelvis-rotation">--</div></div>
+          <div class="check-item" id="check-foot-contact"><div class="check-icon">🦶</div><div class="check-body"><div class="check-name">足底全面接地</div><div class="check-val" id="val-foot-contact">測定中...</div></div><div class="check-status" id="status-foot-contact">--</div></div>
+          <div class="check-item" id="check-pelvis-tilt"><div class="check-icon">📐</div><div class="check-body"><div class="check-name">骨盤が前傾している</div><div class="check-val" id="val-pelvis-tilt">測定中...</div></div><div class="check-status" id="status-pelvis-tilt">--</div></div>
+          <div class="check-item" id="check-smoothness"><div class="check-icon">〜</div><div class="check-body"><div class="check-name">動作がスムース</div><div class="check-val" id="val-smoothness">測定中...</div></div><div class="check-status" id="status-smoothness">--</div></div>
+          <div class="check-item" id="check-trunk-shin"><div class="check-icon">📏</div><div class="check-body"><div class="check-name">体幹と下腿が平行</div><div class="check-val" id="val-trunk-shin">測定中...</div></div><div class="check-status" id="status-trunk-shin">--</div></div>
+          <div class="check-item" id="check-knee-toe"><div class="check-icon">🦵</div><div class="check-body"><div class="check-name">膝とつま先の向きが一致</div><div class="check-val" id="val-knee-toe">測定中...</div></div><div class="check-status" id="status-knee-toe">--</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-angle">
+      <div class="panel-section">
+        <div class="section-label">関節角度</div>
+        <div class="angle-meters">
+          <div class="angle-meter"><div class="angle-head"><span class="angle-name">右膝関節</span><span class="angle-val" id="angle-knee-r">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-knee-r" style="width:0%"></div></div><div class="angle-range"><span>0°</span><span>180°</span></div></div>
+          <div class="angle-meter"><div class="angle-head"><span class="angle-name">左膝関節</span><span class="angle-val" id="angle-knee-l">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-knee-l" style="width:0%"></div></div><div class="angle-range"><span>0°</span><span>180°</span></div></div>
+          <div class="angle-meter"><div class="angle-head"><span class="angle-name">右股関節</span><span class="angle-val" id="angle-hip-r">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-hip-r" style="width:0%"></div></div><div class="angle-range"><span>0°</span><span>180°</span></div></div>
+          <div class="angle-meter"><div class="angle-head"><span class="angle-name">左股関節</span><span class="angle-val" id="angle-hip-l">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-hip-l" style="width:0%"></div></div><div class="angle-range"><span>0°</span><span>180°</span></div></div>
+          <div class="angle-meter"><div class="angle-head"><span class="angle-name">体幹前傾</span><span class="angle-val" id="angle-trunk">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-trunk" style="width:0%"></div></div><div class="angle-range"><span>0°</span><span>90°</span></div></div>
+          <div class="angle-meter"><div class="angle-head"><span class="angle-name">下腿前傾</span><span class="angle-val" id="angle-shin">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-shin" style="width:0%"></div></div><div class="angle-range"><span>0°</span><span>90°</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-history">
+      <div class="panel-section">
+        <div class="history-header">
+          <div class="history-profile-info">
+            <span id="historyProfileLabel">ゲスト</span>
+          </div>
+          <button class="history-clear-btn" onclick="clearHistory()">🗑 履歴を削除</button>
+        </div>
+        <div id="historyList"></div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-stats">
+      <div class="panel-section">
+        <div class="section-label">レップカウント</div>
+        <div class="rep-row">
+          <div class="rep-counter"><div class="rep-num" id="repCount">0</div><div class="rep-unit">回</div></div>
+          <div class="rep-phase" id="repPhase">立位</div>
+        </div>
+      </div>
+      <div class="panel-section">
+        <div class="section-label">セッション統計</div>
+        <div class="stats-grid">
+          <div class="stat-box"><div class="stat-val" id="stat-good">0</div><div class="stat-label">良好</div></div>
+          <div class="stat-box"><div class="stat-val" id="stat-warn" style="color:var(--warn)">0</div><div class="stat-label">注意</div></div>
+          <div class="stat-box"><div class="stat-val" id="stat-bad" style="color:var(--bad)">0</div><div class="stat-label">要修正</div></div>
+          <div class="stat-box"><div class="stat-val" id="stat-avg">--</div><div class="stat-label">平均</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Result Modal -->
+<div class="modal-overlay" id="resultModal">
+  <div class="modal">
+    <div class="modal-title">セッション完了</div>
+    <div class="modal-subtitle" id="modalSubtitle">10回のスクワットを完了しました</div>
+    <div class="modal-score-ring">
+      <svg viewBox="0 0 100 100">
+        <circle class="track" cx="50" cy="50" r="42"/>
+        <circle class="fill" id="modalScoreCircle" cx="50" cy="50" r="42" stroke-dasharray="263.9" stroke-dashoffset="263.9"/>
+      </svg>
+      <div class="modal-score-num"><div class="num" id="modalScoreNum">--</div><div class="label">総合スコア</div></div>
+    </div>
+    <div class="modal-comment" id="modalComment"></div>
+    <div class="modal-stats">
+      <div class="modal-stat"><div class="val" id="modalGood" style="color:var(--good)">0</div><div class="lbl">良好</div></div>
+      <div class="modal-stat"><div class="val" id="modalWarn" style="color:var(--warn)">0</div><div class="lbl">注意</div></div>
+      <div class="modal-stat"><div class="val" id="modalBad" style="color:var(--bad)">0</div><div class="lbl">要修正</div></div>
+    </div>
+    <div class="section-label" style="padding:0 0 8px">項目別スコア</div>
+    <div class="modal-checks" id="modalChecks"></div>
+    <div class="modal-advice" id="modalAdvice">
+      <div class="modal-advice-title">改善アドバイス</div>
+      <div class="modal-advice-text" id="modalAdviceText"></div>
+    </div>
+    <div class="fatigue-section">
+      <div class="fatigue-label">疲労感を記録してください（任意）</div>
+      <div class="fatigue-row" id="fatigueRow">
+        <button class="fatigue-btn" onclick="selectFatigue(1)"><span class="f-emoji">😊</span><span class="f-num">楽々</span></button>
+        <button class="fatigue-btn" onclick="selectFatigue(2)"><span class="f-emoji">🙂</span><span class="f-num">余裕</span></button>
+        <button class="fatigue-btn" onclick="selectFatigue(3)"><span class="f-emoji">😐</span><span class="f-num">普通</span></button>
+        <button class="fatigue-btn" onclick="selectFatigue(4)"><span class="f-emoji">😓</span><span class="f-num">きつい</span></button>
+        <button class="fatigue-btn" onclick="selectFatigue(5)"><span class="f-emoji">😩</span><span class="f-num">限界</span></button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-modal secondary" onclick="resetToStart()">やり直す</button>
+      <button class="btn-modal primary" onclick="restartSession()">もう1セット</button>
+    </div>
+  </div>
+</div>
+
+<!-- Profile Modal -->
+<div class="profile-overlay hidden" id="profileOverlay">
+  <div class="profile-modal">
+    <div class="profile-modal-title">👤 プロフィール設定</div>
+    <div class="profile-modal-sub">データを記録するためのプロフィールを設定します。<br>個人情報はこの端末内にのみ保存されます。</div>
+    <div class="profile-field">
+      <label>ニックネーム（ID）<span class="profile-required">*</span></label>
+      <input type="text" id="profileIdInput" placeholder="例：Shin" maxlength="20">
+    </div>
+    <div class="profile-field">
+      <label>年代（任意）</label>
+      <select id="profileAgeInput">
+        <option value="">選択しない</option>
+        <option value="10代">10代</option>
+        <option value="20代">20代</option>
+        <option value="30代">30代</option>
+        <option value="40代">40代</option>
+        <option value="50代">50代</option>
+        <option value="60代以上">60代以上</option>
+      </select>
+    </div>
+    <div class="profile-field">
+      <label>性別（任意）</label>
+      <select id="profileGenderInput">
+        <option value="">選択しない</option>
+        <option value="男性">男性</option>
+        <option value="女性">女性</option>
+        <option value="その他">その他</option>
+      </select>
+    </div>
+    <div class="profile-field">
+      <label>運動習慣（任意）</label>
+      <select id="profileExerciseInput">
+        <option value="">選択しない</option>
+        <option value="ほぼなし">ほぼなし</option>
+        <option value="週1〜2回">週1〜2回</option>
+        <option value="週3〜4回">週3〜4回</option>
+        <option value="週5回以上">週5回以上</option>
+      </select>
+    </div>
+    <button class="profile-save-btn" onclick="saveProfile()">保存する</button>
+    <span class="profile-skip" id="profileSkipBtn" onclick="closeProfileModal()">スキップ（ゲストとして続ける）</span>
+    <div class="profile-note">🔒 入力された情報はこの端末のブラウザにのみ保存されます。サーバーへの送信は一切行いません。</div>
+  </div>
+</div>
+
+<script>
+// ─── Tab switching ─────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    b.classList.toggle('active', ['check','angle','stats','history'][i] === name);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'history') renderHistory();
+}
+
+// ─── Target reps ───────────────────────────────────────────
+let targetReps = 10;
+function adjustTarget(d) {
+  targetReps = Math.max(1, Math.min(50, targetReps + d));
+  document.getElementById('targetNum').textContent = targetReps;
+}
+
+// ─── Pose landmarks ────────────────────────────────────────
+const L = {
+  NOSE:0, LEFT_EYE:1, RIGHT_EYE:2, LEFT_EAR:7, RIGHT_EAR:8,
+  LEFT_SHOULDER:11, RIGHT_SHOULDER:12, LEFT_ELBOW:13, RIGHT_ELBOW:14,
+  LEFT_WRIST:15, RIGHT_WRIST:16, LEFT_HIP:23, RIGHT_HIP:24,
+  LEFT_KNEE:25, RIGHT_KNEE:26, LEFT_ANKLE:27, RIGHT_ANKLE:28,
+  LEFT_HEEL:29, RIGHT_HEEL:30, LEFT_FOOT_INDEX:31, RIGHT_FOOT_INDEX:32,
+};
+
+// ─── State ─────────────────────────────────────────────────
+let pose = null, videoEl, canvasEl, ctx;
+let isRunning = false, landmarks = null;
+let currentFacing = 'environment';
+let repCount = 0, repPhase = 'stand';
+let repScores = [], goodCount = 0, warnCount = 0, badCount = 0;
+let lastFrameTime = 0, fpsFilter = 0;
+let prevKneeAngles = [];
+const SMOOTH_WINDOW = 10;
+let sessionComplete = false;
+
+// Per-check accumulators for report
+const checkNames = ['face-forward','trunk-tilt','pelvis-rotation','foot-contact','pelvis-tilt','smoothness','trunk-shin','knee-toe'];
+const checkLabels = ['顔は前を向く','体幹が左右に傾かない','骨盤回旋なし','足底全面接地','骨盤が前傾している','動作がスムース','体幹と下腿が平行','膝とつま先の向きが一致'];
+let checkScoreAccum = {}; // { name: [scores...] }
+checkNames.forEach(n => checkScoreAccum[n] = []);
+
+// ─── Utility ───────────────────────────────────────────────
+function calcAngle(a, b, c) {
+  const ba = {x:a.x-b.x, y:a.y-b.y}, bc = {x:c.x-b.x, y:c.y-b.y};
+  const dot = ba.x*bc.x + ba.y*bc.y;
+  const mag = Math.sqrt(ba.x**2+ba.y**2) * Math.sqrt(bc.x**2+bc.y**2);
+  if (mag === 0) return 180;
+  return Math.round(Math.acos(Math.max(-1, Math.min(1, dot/mag))) * 180 / Math.PI);
+}
+function angleFromVertical(top, bottom) {
+  return Math.round(Math.abs(Math.atan2(top.x-bottom.x, -(top.y-bottom.y))) * 180 / Math.PI);
+}
+function lerp(a,b,t) { return a+(b-a)*t; }
+
+// ─── Camera ────────────────────────────────────────────────
+async function startCamera() {
+  videoEl = document.getElementById('videoElement');
+  canvasEl = document.getElementById('outputCanvas');
+  ctx = canvasEl.getContext('2d');
+  document.getElementById('startScreen').style.display = 'none';
+  videoEl.style.display = 'block';
+  canvasEl.style.display = 'block';
+  document.getElementById('cameraOverlay').style.display = 'block';
+  document.getElementById('progressOverlay').style.display = 'flex';
+  document.getElementById('panelStartBtn').style.display = 'none';
+  var hsb = document.getElementById('headerStopBtn');
+  hsb.style.opacity = '1'; hsb.style.pointerEvents = 'auto';
+  updateProgress();
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: currentFacing, width:{ideal:640}, height:{ideal:480} }
+    });
+    videoEl.srcObject = stream;
+    if (currentFacing === 'user') {
+      videoEl.style.transform = 'scaleX(-1)'; canvasEl.style.transform = 'scaleX(-1)';
+    } else {
+      videoEl.style.transform = 'none'; canvasEl.style.transform = 'none';
+    }
+    await videoEl.play();
+    canvasEl.width = videoEl.videoWidth || 640;
+    canvasEl.height = videoEl.videoHeight || 480;
+  } catch (e) { console.warn('Camera error:', e.message); }
+  showPositionCheck();
+}
+
+function showPositionCheck() {
+  // ラベルをカメラ方向に合わせて初期化
+  document.getElementById('posCamLabel').textContent =
+    currentFacing === 'user' ? 'アウトカメラ' : 'インカメラ';
+  document.getElementById('posCheckOverlay').classList.add('active');
+}
+
+async function switchCameraInCheck() {
+  currentFacing = currentFacing === 'user' ? 'environment' : 'user';
+  var btn = document.getElementById('posCamSwitch');
+  btn.disabled = true;
+  if (videoEl.srcObject) videoEl.srcObject.getTracks().forEach(t => t.stop());
+  try {
+    var stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: currentFacing, width:{ideal:640}, height:{ideal:480} }
+    });
+    videoEl.srcObject = stream;
+    videoEl.style.transform = currentFacing === 'user' ? 'scaleX(-1)' : 'none';
+    canvasEl.style.transform = currentFacing === 'user' ? 'scaleX(-1)' : 'none';
+    await videoEl.play();
+    canvasEl.width = videoEl.videoWidth || 640;
+    canvasEl.height = videoEl.videoHeight || 480;
+  } catch (e) { console.warn('Switch error:', e.message); }
+  document.getElementById('posCamLabel').textContent =
+    currentFacing === 'user' ? 'アウトカメラ' : 'インカメラ';
+  btn.disabled = false;
+}
+
+function hidePositionCheck() {
+  document.getElementById('posCheckOverlay').classList.remove('active');
+  startCountdown();
+}
+
+function startCountdown() {
+  var overlay = document.getElementById('countdownOverlay');
+  var numEl   = document.getElementById('countdownNum');
+  var count   = 3;
+
+  overlay.classList.add('active');
+  numEl.textContent = count;
+  // Force reflow to restart animation on first tick
+  void numEl.offsetWidth;
+
+  var timer = setInterval(function() {
+    count--;
+    if (count > 0) {
+      numEl.textContent = count;
+      // Restart animation
+      numEl.style.animation = 'none';
+      void numEl.offsetWidth;
+      numEl.style.animation = '';
+    } else {
+      // Show GO!
+      numEl.textContent = 'GO!';
+      numEl.style.animation = 'none';
+      void numEl.offsetWidth;
+      numEl.style.animation = '';
+      clearInterval(timer);
+      setTimeout(function() {
+        overlay.classList.remove('active');
+        initPose();
+      }, 800);
+    }
+  }, 1000);
+}
+
+async function switchCamera() {
+  currentFacing = currentFacing === 'user' ? 'environment' : 'user';
+  if (videoEl.srcObject) videoEl.srcObject.getTracks().forEach(t => t.stop());
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: currentFacing, width:{ideal:640}, height:{ideal:480} }
+    });
+    videoEl.srcObject = stream;
+    videoEl.style.transform = currentFacing === 'user' ? 'scaleX(-1)' : 'none';
+    canvasEl.style.transform = currentFacing === 'user' ? 'scaleX(-1)' : 'none';
+    await videoEl.play();
+    canvasEl.width = videoEl.videoWidth || 640;
+    canvasEl.height = videoEl.videoHeight || 480;
+  } catch (e) { console.warn('Switch error:', e.message); }
+}
+
+// ─── MediaPipe ─────────────────────────────────────────────
+function initPose() {
+  if (typeof Pose === 'undefined') {
+    console.warn('MediaPipe not loaded. Demo mode.');
+    setBadge('active', 'デモモード');
+    document.getElementById('scanline').classList.add('active');
+    isRunning = true;
+    startSimulationMode();
+    return;
+  }
+  pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${f}` });
+  pose.setOptions({ modelComplexity:1, smoothLandmarks:true, enableSegmentation:false, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
+  pose.onResults(onResults);
+  setBadge('active', '解析中');
+  document.getElementById('scanline').classList.add('active');
+  isRunning = true;
+  processFrame();
+}
+
+async function processFrame() {
+  if (!isRunning) return;
+  if (videoEl.readyState >= 2) {
+    canvasEl.width = videoEl.videoWidth; canvasEl.height = videoEl.videoHeight;
+    try { await pose.send({image:videoEl}); } catch(e) {}
+  }
+  const now = performance.now();
+  fpsFilter = lerp(fpsFilter, 1000/(now-lastFrameTime), 0.1);
+  lastFrameTime = now;
+  document.getElementById('fpsBadge').textContent = Math.round(fpsFilter) + ' fps';
+  requestAnimationFrame(processFrame);
+}
+
+function onResults(results) {
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  if (!results.poseLandmarks) { document.getElementById('phaseBadge').textContent = '人物を検出できません'; return; }
+  landmarks = results.poseLandmarks;
+  drawSkeleton(landmarks);
+  analyzeForm(landmarks);
+}
+
+// ─── Skeleton ──────────────────────────────────────────────
+function drawSkeleton(lm) {
+  const W = canvasEl.width, H = canvasEl.height;
+  const conn = [[11,13],[13,15],[12,14],[14,16],[11,12],[23,24],[11,23],[12,24],[23,25],[24,26],[25,27],[26,28],[27,29],[28,30],[27,31],[28,32]];
+  ctx.lineWidth = 3;
+  conn.forEach(([a,b]) => { if(!lm[a]||!lm[b]) return; ctx.beginPath(); ctx.moveTo(lm[a].x*W, lm[a].y*H); ctx.lineTo(lm[b].x*W, lm[b].y*H); ctx.strokeStyle='rgba(0,212,170,0.7)'; ctx.stroke(); });
+  [0,11,12,13,14,15,16,23,24,25,26,27,28].forEach(i => { if(!lm[i]) return; ctx.beginPath(); ctx.arc(lm[i].x*W, lm[i].y*H, 4, 0, Math.PI*2); ctx.fillStyle='rgba(0,212,170,0.9)'; ctx.fill(); ctx.strokeStyle='white'; ctx.lineWidth=1.5; ctx.stroke(); });
+}
+
+// ─── Analysis ──────────────────────────────────────────────
+function analyzeForm(lm) {
+  if (sessionComplete) return;
+  const nose=lm[L.NOSE], lSh=lm[L.LEFT_SHOULDER], rSh=lm[L.RIGHT_SHOULDER];
+  const lHip=lm[L.LEFT_HIP], rHip=lm[L.RIGHT_HIP], lKnee=lm[L.LEFT_KNEE], rKnee=lm[L.RIGHT_KNEE];
+  const lAnkle=lm[L.LEFT_ANKLE], rAnkle=lm[L.RIGHT_ANKLE];
+  const lHeel=lm[L.LEFT_HEEL], rHeel=lm[L.RIGHT_HEEL], lFoot=lm[L.LEFT_FOOT_INDEX], rFoot=lm[L.RIGHT_FOOT_INDEX];
+  if (!lHip||!rHip||!lKnee||!rKnee) return;
+
+  const kneeR=calcAngle(rHip,rKnee,rAnkle), kneeL=calcAngle(lHip,lKnee,lAnkle);
+  const hipR=calcAngle(rSh,rHip,rKnee), hipL=calcAngle(lSh,lHip,lKnee);
+  const midHip={x:(lHip.x+rHip.x)/2,y:(lHip.y+rHip.y)/2};
+  const midSh={x:(lSh.x+rSh.x)/2,y:(lSh.y+rSh.y)/2};
+  const midKnee={x:(lKnee.x+rKnee.x)/2,y:(lKnee.y+rKnee.y)/2};
+  const midAnkle={x:(lAnkle.x+rAnkle.x)/2,y:(lAnkle.y+rAnkle.y)/2};
+  const trunkAngle=angleFromVertical(midSh,midHip);
+  const shinAngle=angleFromVertical(midKnee,midAnkle);
+
+  updateAngle('knee-r',kneeR,0,180); updateAngle('knee-l',kneeL,0,180);
+  updateAngle('hip-r',hipR,0,180); updateAngle('hip-l',hipL,0,180);
+  updateAngle2('trunk',trunkAngle,0,90); updateAngle2('shin',shinAngle,0,90);
+
+  const avgKnee=(kneeR+kneeL)/2;
+  countRep(avgKnee);
+  prevKneeAngles.push(avgKnee);
+  if (prevKneeAngles.length > SMOOTH_WINDOW) prevKneeAngles.shift();
+
+  let totalScore=0, items=0;
+  const isSquatting = avgKnee < 155;
+  const shW = Math.abs(lSh.x-rSh.x);
+
+  // 1. Face forward
+  if (nose && lSh && rSh) {
+    const off = Math.abs(nose.x-(lSh.x+rSh.x)/2)/Math.max(shW,0.001);
+    const above = nose.y < Math.min(lSh.y,rSh.y);
+    let s; if(off<0.15&&above){s=100;updateCheck('face-forward','good','正面を向いています',`偏差:${(off*100).toFixed(0)}%`);}
+    else if(off<0.3){s=60;updateCheck('face-forward','warn','やや横を向いています',`偏差:${(off*100).toFixed(0)}%`);}
+    else{s=0;updateCheck('face-forward','bad','顔が横を向いています',`偏差:${(off*100).toFixed(0)}%`);}
+    totalScore+=s; items++; checkScoreAccum['face-forward'].push(s);
+  }
+
+  // 2. Trunk tilt
+  {
+    const t=Math.max(Math.abs(lSh.y-rSh.y),Math.abs(lHip.y-rHip.y))/Math.max(Math.abs(midSh.y-midHip.y),0.001);
+    let s; if(t<0.05){s=100;updateCheck('trunk-tilt','good','左右均等',`傾斜比:${(t*100).toFixed(0)}%`);}
+    else if(t<0.12){s=60;updateCheck('trunk-tilt','warn',`軽度傾斜`,`傾斜比:${(t*100).toFixed(0)}%`);}
+    else{s=0;updateCheck('trunk-tilt','bad','体幹が傾いています',`傾斜比:${(t*100).toFixed(0)}%`);}
+    totalScore+=s; items++; checkScoreAccum['trunk-tilt'].push(s);
+  }
+
+  // 3. Pelvis rotation
+  {
+    const co=Math.abs((lHip.x+rHip.x)/2-(lSh.x+rSh.x)/2)/Math.max(shW,0.001);
+    let s; if(co<0.08){s=100;updateCheck('pelvis-rotation','good','回旋なし',`偏位:${(co*100).toFixed(0)}%`);}
+    else if(co<0.15){s=60;updateCheck('pelvis-rotation','warn','軽度回旋の可能性',`偏位:${(co*100).toFixed(0)}%`);}
+    else{s=0;updateCheck('pelvis-rotation','bad','骨盤回旋あり',`偏位:${(co*100).toFixed(0)}%`);}
+    totalScore+=s; items++; checkScoreAccum['pelvis-rotation'].push(s);
+  }
+
+  // 4. Foot contact
+  if (lHeel&&rHeel&&lFoot&&rFoot) {
+    const ankH=Math.abs(midKnee.y-midAnkle.y);
+    const fr=Math.max(Math.abs(lHeel.y-lFoot.y),Math.abs(rHeel.y-rFoot.y))/Math.max(ankH,0.001);
+    let s; if(fr<0.08){s=100;updateCheck('foot-contact','good','全面接地',`足底差:${(fr*100).toFixed(0)}%`);}
+    else if(fr<0.15){s=60;updateCheck('foot-contact','warn','やや浮き気味',`足底差:${(fr*100).toFixed(0)}%`);}
+    else{s=0;updateCheck('foot-contact','bad','踵が浮いています',`足底差:${(fr*100).toFixed(0)}%`);}
+    totalScore+=s; items++; checkScoreAccum['foot-contact'].push(s);
+  }
+
+  // 5. Pelvis tilt
+  {
+    let s;
+    if(isSquatting){
+      if(trunkAngle>=15&&trunkAngle<=45){s=100;updateCheck('pelvis-tilt','good',`適切な前傾 (${trunkAngle}°)`,`体幹角:${trunkAngle}°`);}
+      else if(trunkAngle<15){s=60;updateCheck('pelvis-tilt','warn',`前傾不足 (${trunkAngle}°)`,`体幹角:${trunkAngle}°`);}
+      else if(trunkAngle<=55){s=60;updateCheck('pelvis-tilt','warn',`やや過度 (${trunkAngle}°)`,`体幹角:${trunkAngle}°`);}
+      else{s=0;updateCheck('pelvis-tilt','bad',`過度な前傾 (${trunkAngle}°)`,`体幹角:${trunkAngle}°`);}
+    } else { s=100; updateCheck('pelvis-tilt','good','評価対象外（立位）',''); }
+    totalScore+=s; items++; checkScoreAccum['pelvis-tilt'].push(s);
+  }
+
+  // 6. Smoothness
+  {
+    let s=100;
+    if(prevKneeAngles.length>=SMOOTH_WINDOW){
+      let vels=[],jerks=[];
+      for(let i=1;i<prevKneeAngles.length;i++) vels.push(Math.abs(prevKneeAngles[i]-prevKneeAngles[i-1]));
+      for(let i=1;i<vels.length;i++) jerks.push(Math.abs(vels[i]-vels[i-1]));
+      const aj=jerks.reduce((a,b)=>a+b,0)/Math.max(jerks.length,1);
+      if(aj<2){s=100;updateCheck('smoothness','good','スムーズな動作',`変動:${aj.toFixed(1)}`);}
+      else if(aj<5){s=60;updateCheck('smoothness','warn','やや不安定',`変動:${aj.toFixed(1)}`);}
+      else{s=0;updateCheck('smoothness','bad','動作がぎこちない',`変動:${aj.toFixed(1)}`);}
+    } else { updateCheck('smoothness','','計測中...','データ蓄積中'); }
+    totalScore+=s; items++; checkScoreAccum['smoothness'].push(s);
+  }
+
+  // 7. Trunk-shin parallel
+  {
+    let s;
+    if(isSquatting){
+      const d=Math.abs(trunkAngle-shinAngle);
+      if(d<=8){s=100;updateCheck('trunk-shin','good',`平行 (差${d}°)`,`体幹${trunkAngle}°/下腿${shinAngle}°`);}
+      else if(d<=18){s=60;updateCheck('trunk-shin','warn',`やや差あり (差${d}°)`,`体幹${trunkAngle}°/下腿${shinAngle}°`);}
+      else{s=0;updateCheck('trunk-shin','bad',`平行でない (差${d}°)`,`体幹${trunkAngle}°/下腿${shinAngle}°`);}
+    } else { s=100; updateCheck('trunk-shin','good','評価対象外（立位）',''); }
+    totalScore+=s; items++; checkScoreAccum['trunk-shin'].push(s);
+  }
+
+  // 8. Knee-toe alignment
+  {
+    let s;
+    if(isSquatting&&lFoot&&rFoot){
+      const d=Math.max(Math.abs(rKnee.x-rFoot.x),Math.abs(lKnee.x-lFoot.x))/Math.max(shW,0.001);
+      if(d<0.1){s=100;updateCheck('knee-toe','good','一致しています',`偏差:${(d*100).toFixed(0)}%`);}
+      else if(d<0.2){s=60;updateCheck('knee-toe','warn','軽度のずれ',`偏差:${(d*100).toFixed(0)}%`);}
+      else{s=0;updateCheck('knee-toe','bad','膝がずれています',`偏差:${(d*100).toFixed(0)}%`);}
+    } else { s=100; updateCheck('knee-toe','good','評価対象外（立位）',''); }
+    totalScore+=s; items++; checkScoreAccum['knee-toe'].push(s);
+  }
+
+  updateScore(Math.round(totalScore/Math.max(items,1)));
+
+  // Alerts
+  const alerts=[];
+  if(document.querySelector('#check-trunk-tilt.bad')) alerts.push('体幹が傾いています');
+  if(document.querySelector('#check-foot-contact.bad')) alerts.push('踵が浮いています');
+  if(document.querySelector('#check-knee-toe.bad')) alerts.push('膝とつま先がずれています');
+  const ab=document.getElementById('alertBox');
+  if(alerts.length){ab.textContent='⚠️ '+alerts[0];ab.classList.add('show');}
+  else ab.classList.remove('show');
+}
+
+// ─── Rep counting ──────────────────────────────────────────
+function countRep(avgKnee) {
+  if (sessionComplete) return;
+  const phaseEl=document.getElementById('repPhase');
+  const badge=document.getElementById('phaseBadge');
+
+  if(repPhase==='stand'&&avgKnee<130){
+    repPhase='down'; phaseEl.textContent='しゃがみ中...'; badge.textContent='▼ 下降';
+  } else if(repPhase==='down'&&avgKnee>155){
+    repPhase='stand'; repCount++;
+    document.getElementById('repCount').textContent=repCount;
+    phaseEl.textContent='立位'; badge.textContent='✓ '+repCount+'回完了！';
+    updateProgress();
+    updateStats();
+
+    if(repCount>=targetReps){
+      sessionComplete=true;
+      setTimeout(showResultModal, 800);
+      return;
+    }
+    setTimeout(()=>{ if(repPhase==='stand'&&!sessionComplete) badge.textContent='▲ スクワット開始'; }, 1200);
+  } else if(repPhase==='stand'){
+    badge.textContent='▲ スクワット開始';
+  }
+}
+
+function updateProgress() {
+  document.getElementById('progressText').textContent = repCount + ' / ' + targetReps;
+  document.getElementById('progressFill').style.width = Math.min(100, (repCount/targetReps)*100) + '%';
+}
+
+function updateStats() {
+  const score=parseInt(document.getElementById('scoreNum').textContent)||0;
+  repScores.push(score);
+  if(score>=80) goodCount++; else if(score>=50) warnCount++; else badCount++;
+  document.getElementById('stat-good').textContent=goodCount;
+  document.getElementById('stat-warn').textContent=warnCount;
+  document.getElementById('stat-bad').textContent=badCount;
+  document.getElementById('stat-avg').textContent=Math.round(repScores.reduce((a,b)=>a+b,0)/repScores.length);
+}
+
+// ─── Result Modal ──────────────────────────────────────────
+function showResultModal(aborted = false) {
+  const avg = repScores.length ? Math.round(repScores.reduce((a,b)=>a+b,0)/repScores.length) : 0;
+
+  document.getElementById('modalSubtitle').textContent = aborted
+    ? repCount + '回で中止しました'
+    : targetReps + '回のスクワットを完了しました';
+  document.getElementById('modalScoreNum').textContent = avg;
+  const circ = document.getElementById('modalScoreCircle');
+  setTimeout(() => { circ.style.strokeDashoffset = 263.9 * (1 - avg/100); }, 100);
+
+  let color;
+  if(avg>=80) { color='var(--good)'; document.getElementById('modalComment').textContent='素晴らしいフォームです！この調子で続けましょう。'; }
+  else if(avg>=60) { color='var(--warn)'; document.getElementById('modalComment').textContent='概ね良好ですが、いくつか改善ポイントがあります。'; }
+  else { color='var(--bad)'; document.getElementById('modalComment').textContent='フォームに改善の余地があります。下記のアドバイスを参考にしてください。'; }
+  circ.style.stroke = color;
+  document.getElementById('modalScoreNum').style.color = color;
+
+  document.getElementById('modalGood').textContent=goodCount;
+  document.getElementById('modalWarn').textContent=warnCount;
+  document.getElementById('modalBad').textContent=badCount;
+
+  // Per-check scores
+  const checksEl = document.getElementById('modalChecks');
+  checksEl.innerHTML = '';
+  const weakPoints = [];
+  checkNames.forEach((name, i) => {
+    const scores = checkScoreAccum[name];
+    const avg2 = scores.length ? Math.round(scores.reduce((a,b)=>a+b,0)/scores.length) : 0;
+    const c = avg2>=80?'var(--good)':avg2>=50?'var(--warn)':'var(--bad)';
+    const icon = avg2>=80?'✅':avg2>=50?'⚠️':'❌';
+    checksEl.innerHTML += `<div class="modal-check"><div class="modal-check-icon">${icon}</div><div class="modal-check-name">${checkLabels[i]}</div><div class="modal-check-score" style="color:${c}">${avg2}</div></div>`;
+    if (avg2 < 70) weakPoints.push({ label: checkLabels[i], score: avg2 });
+  });
+
+  // Advice
+  const adviceEl = document.getElementById('modalAdviceText');
+  if (weakPoints.length === 0) {
+    adviceEl.textContent = '全ての項目で良好なスコアです。フォームを維持しながら、負荷を少しずつ上げていきましょう。';
+  } else {
+    const tips = weakPoints.slice(0, 3).map(w => {
+      if(w.label.includes('顔')) return '視線を正面に固定し、顎を軽く引きましょう。';
+      if(w.label.includes('体幹')&&w.label.includes('左右')) return '鏡の前で左右の肩の高さが均等か確認しましょう。';
+      if(w.label.includes('骨盤回旋')) return '両足を均等に踏みしめ、骨盤が正面を向くよう意識しましょう。';
+      if(w.label.includes('足底')) return '踵が浮かないよう、重心をやや後方に意識しましょう。靴を脱ぐと改善することがあります。';
+      if(w.label.includes('前傾')) return '胸を張り、骨盤を適度に前傾させましょう。お尻を後ろに突き出すイメージです。';
+      if(w.label.includes('スムース')) return 'ゆっくり一定のテンポで動作しましょう。息を吸いながら下降、吐きながら上昇を意識します。';
+      if(w.label.includes('平行')) return '体幹と脛が平行になるよう、股関節の屈曲を意識しましょう。';
+      if(w.label.includes('膝')&&w.label.includes('つま先')) return '膝がつま先と同じ方向を向くよう、外側に開くイメージで動作しましょう。';
+      return 'フォームを意識してゆっくり行いましょう。';
+    });
+    adviceEl.textContent = tips.join(' ');
+  }
+
+  resetFatigue();
+  document.getElementById('resultModal').classList.add('show');
+
+  // セッションデータを一時保持（疲労感選択後に保存）
+  _pendingSession = { score: avg, reps: repCount, targetReps: targetReps,
+                      good: goodCount, warn: warnCount, bad: badCount };
+}
+
+var _pendingSession = null;
+function flushSession() {
+  if (_pendingSession) {
+    saveSession(_pendingSession.score, _pendingSession.reps, _pendingSession.targetReps,
+                _pendingSession.good, _pendingSession.warn, _pendingSession.bad);
+    _pendingSession = null;
+  }
+}
+
+function closeModal() { document.getElementById('resultModal').classList.remove('show'); }
+
+function restartSession() {
+  flushSession();
+  closeModal();
+  repCount=0; repPhase='stand'; repScores=[];
+  goodCount=0; warnCount=0; badCount=0;
+  sessionComplete=false;
+  prevKneeAngles=[];
+  checkNames.forEach(n => checkScoreAccum[n]=[]);
+  document.getElementById('repCount').textContent='0';
+  document.getElementById('repPhase').textContent='立位';
+  document.getElementById('stat-good').textContent='0';
+  document.getElementById('stat-warn').textContent='0';
+  document.getElementById('stat-bad').textContent='0';
+  document.getElementById('stat-avg').textContent='--';
+  updateProgress();
+  document.getElementById('phaseBadge').textContent='▲ スクワット開始';
+}
+
+// ─── Stop / Abort ──────────────────────────────────────────
+function stopSession() {
+  document.getElementById('abortRepInfo').textContent = '現在 ' + repCount + ' 回完了';
+  document.getElementById('abortMenu').classList.add('show');
+}
+
+function closeAbortMenu() {
+  document.getElementById('abortMenu').classList.remove('show');
+}
+
+function confirmAbort() {
+  closeAbortMenu();
+  sessionComplete = true;
+  showResultModal(true);
+}
+
+function resetToStart() {
+  flushSession();
+  closeAbortMenu();
+  closeModal();
+  document.getElementById('posCheckOverlay').classList.remove('active');
+  document.getElementById('countdownOverlay').classList.remove('active');
+  isRunning = false;
+  if (videoEl && videoEl.srcObject) videoEl.srcObject.getTracks().forEach(t => t.stop());
+  repCount=0; repPhase='stand'; repScores=[];
+  goodCount=0; warnCount=0; badCount=0;
+  sessionComplete=false;
+  prevKneeAngles=[];
+  checkNames.forEach(n => checkScoreAccum[n]=[]);
+  if (videoEl) videoEl.style.display = 'none';
+  if (canvasEl) canvasEl.style.display = 'none';
+  document.getElementById('cameraOverlay').style.display = 'none';
+  document.getElementById('startScreen').style.display = 'flex';
+  document.getElementById('panelStartBtn').style.display = 'block';
+  var hsb2 = document.getElementById('headerStopBtn');
+  hsb2.style.opacity = '0'; hsb2.style.pointerEvents = 'none';
+  document.getElementById('repCount').textContent='0';
+  document.getElementById('repPhase').textContent='立位';
+  document.getElementById('stat-good').textContent='0';
+  document.getElementById('stat-warn').textContent='0';
+  document.getElementById('stat-bad').textContent='0';
+  document.getElementById('stat-avg').textContent='--';
+  document.getElementById('scoreNum').textContent='--';
+  document.getElementById('scoreComment').textContent='カメラを起動してください';
+  updateProgress();
+  setBadge('', '待機中');
+}
+
+// ─── UI helpers ────────────────────────────────────────────
+function updateAngle(id,val,min,max){
+  document.getElementById('angle-'+id).textContent=val+'°';
+  document.getElementById('bar-'+id).style.width=Math.max(0,Math.min(100,((val-min)/(max-min))*100))+'%';
+}
+function updateAngle2(id,val,min,max){
+  const el=document.getElementById('angle-'+id), bar=document.getElementById('bar-'+id);
+  if(el) el.textContent=val+'°';
+  if(bar) bar.style.width=Math.max(0,Math.min(100,((val-min)/(max-min))*100))+'%';
+}
+function updateCheck(id,status,text,valText){
+  const item=document.getElementById('check-'+id);
+  if(!item) return;
+  item.className='check-item '+status;
+  const v=document.getElementById('val-'+id); if(v) v.textContent=valText||'';
+  const s=document.getElementById('status-'+id); if(s) s.textContent={good:'OK',warn:'注意',bad:'NG'}[status]||'--';
+  // HUD update
+  const hudItem=document.getElementById('hud-'+id);
+  if(hudItem) hudItem.className='hud-item '+status;
+  const hudSt=document.getElementById('hudst-'+id);
+  if(hudSt) hudSt.textContent={good:'✓',warn:'⚠',bad:'✗'}[status]||'--';
+}
+function updateScore(score){
+  document.getElementById('scoreNum').textContent=score;
+  const c=document.getElementById('scoreCircle');
+  c.style.strokeDashoffset=188.5*(1-score/100);
+  let comment,color;
+  if(score>=80){comment='素晴らしいフォームです！';color='var(--good)';}
+  else if(score>=60){comment='概ね良好です';color='var(--warn)';}
+  else{comment='改善点があります';color='var(--bad)';}
+  document.getElementById('scoreComment').textContent=comment;
+  c.style.stroke=color; document.getElementById('scoreNum').style.color=color;
+}
+function setBadge(type,text){
+  document.getElementById('statusBadge').className='status-badge '+(type==='active'?'active':'');
+  document.getElementById('statusText').textContent=text;
+}
+
+// ─── Simulation mode ───────────────────────────────────────
+function startSimulationMode(){
+  let t=0;
+  function sim(){
+    if(sessionComplete){requestAnimationFrame(sim);return;}
+    t+=0.03;
+    const cycle=(Math.sin(t)+1)/2;
+    const kneeA=Math.round(180-cycle*80), kneeLL=kneeA+Math.round((Math.random()-0.5)*6);
+    const hipA=Math.round(180-cycle*70), hipLL=hipA+Math.round((Math.random()-0.5)*6);
+    const trunkA=Math.round(5+cycle*30), shinA=Math.round(5+cycle*28+(Math.random()-0.5)*4);
+    updateAngle('knee-r',kneeA,0,180); updateAngle('knee-l',kneeLL,0,180);
+    updateAngle('hip-r',hipA,0,180); updateAngle('hip-l',hipLL,0,180);
+    updateAngle2('trunk',trunkA,0,90); updateAngle2('shin',shinA,0,90);
+    const avgK=(kneeA+kneeLL)/2;
+    countRep(avgK);
+    prevKneeAngles.push(avgK); if(prevKneeAngles.length>SMOOTH_WINDOW) prevKneeAngles.shift();
+    const isSq=avgK<155;
+
+    // Simulate checks
+    const sc = (n, s, stat, txt, val) => { checkScoreAccum[n].push(s); updateCheck(n, stat, txt, val); return s; };
+    let total=0, items=0;
+    total+=sc('face-forward',100,'good','正面を向いています',`偏差:${Math.round(Math.random()*8)}%`); items++;
+    const tv=Math.round(Math.random()*4); total+=sc('trunk-tilt',tv<3?100:60,tv<3?'good':'warn',tv<3?'左右均等':'軽度傾斜',`傾斜比:${tv}%`); items++;
+    total+=sc('pelvis-rotation',100,'good','回旋なし',`偏位:${Math.round(Math.random()*5)}%`); items++;
+    total+=sc('foot-contact',100,'good','全面接地',`足底差:${Math.round(Math.random()*5)}%`); items++;
+    if(isSq){const ok=trunkA>=15&&trunkA<=45; total+=sc('pelvis-tilt',ok?100:60,ok?'good':'warn',ok?`適切 (${trunkA}°)`:`やや前傾 (${trunkA}°)`,`体幹角:${trunkA}°`);}
+    else total+=sc('pelvis-tilt',100,'good','評価対象外',''); items++;
+    const jk=0.5+Math.random()*1.5; total+=sc('smoothness',jk<2?100:60,jk<2?'good':'warn',jk<2?'スムーズ':'やや不安定',`変動:${jk.toFixed(1)}`); items++;
+    if(isSq){const d=Math.abs(trunkA-shinA); total+=sc('trunk-shin',d<=8?100:d<=18?60:0,d<=8?'good':d<=18?'warn':'bad',d<=8?`平行 (差${d}°)`:`差あり (差${d}°)`,`体幹${trunkA}°/下腿${shinA}°`);}
+    else total+=sc('trunk-shin',100,'good','評価対象外',''); items++;
+    total+=sc('knee-toe',100,'good','一致しています',`偏差:${Math.round(Math.random()*6)}%`); items++;
+    updateScore(Math.round(total/items));
+
+    ctx.clearRect(0,0,canvasEl.width,canvasEl.height);
+    drawSimSkeleton(cycle,canvasEl.width,canvasEl.height);
+    const now=performance.now(); fpsFilter=lerp(fpsFilter,1000/Math.max(1,now-lastFrameTime),0.1); lastFrameTime=now;
+    document.getElementById('fpsBadge').textContent=Math.round(fpsFilter)+' fps (demo)';
+    requestAnimationFrame(sim);
+  }
+  sim();
+}
+
+function drawSimSkeleton(cycle,W,H){
+  const cx=W*0.5,cy=H*0.1,sq=cycle;
+  const j={head:{x:cx,y:cy},lSh:{x:cx-W*0.08,y:cy+H*0.1},rSh:{x:cx+W*0.08,y:cy+H*0.1},lHip:{x:cx-W*0.06,y:cy+H*0.25+sq*H*0.05},rHip:{x:cx+W*0.06,y:cy+H*0.25+sq*H*0.05},lKnee:{x:cx-W*0.09,y:cy+H*0.43+sq*H*0.10},rKnee:{x:cx+W*0.09,y:cy+H*0.43+sq*H*0.10},lAnkle:{x:cx-W*0.09+sq*W*0.02,y:cy+H*0.65},rAnkle:{x:cx+W*0.09-sq*W*0.02,y:cy+H*0.65}};
+  const links=[['lSh','rSh'],['lSh','lHip'],['rSh','rHip'],['lHip','rHip'],['lHip','lKnee'],['rHip','rKnee'],['lKnee','lAnkle'],['rKnee','rAnkle'],['lSh','head'],['rSh','head']];
+  ctx.lineWidth=3;ctx.strokeStyle='rgba(0,212,170,0.7)';
+  links.forEach(([a,b])=>{ctx.beginPath();ctx.moveTo(j[a].x,j[a].y);ctx.lineTo(j[b].x,j[b].y);ctx.stroke();});
+  Object.values(j).forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,5,0,Math.PI*2);ctx.fillStyle='rgba(0,212,170,0.9)';ctx.fill();ctx.strokeStyle='white';ctx.lineWidth=1.5;ctx.stroke();});
+  ctx.beginPath();ctx.arc(j.head.x,j.head.y,16,0,Math.PI*2);ctx.strokeStyle='rgba(0,212,170,0.7)';ctx.lineWidth=2;ctx.stroke();
+}
+
+// ═══════════════════════════════════════════════════════════
+// ─── LocalStorage helpers ──────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+const DB_KEY = 'sqCheckerData';
+
+function dbLoad() {
+  try { return JSON.parse(localStorage.getItem(DB_KEY)) || { profile: null, sessions: [] }; }
+  catch(e) { return { profile: null, sessions: [] }; }
+}
+function dbSave(data) {
+  try { localStorage.setItem(DB_KEY, JSON.stringify(data)); } catch(e) {}
+}
+
+// ─── Profile ───────────────────────────────────────────────
+function openProfileModal() {
+  var db = dbLoad();
+  var p = db.profile;
+  if (p) {
+    document.getElementById('profileIdInput').value = p.id || '';
+    document.getElementById('profileAgeInput').value = p.ageGroup || '';
+    document.getElementById('profileGenderInput').value = p.gender || '';
+    document.getElementById('profileExerciseInput').value = p.exerciseHabit || '';
+    document.getElementById('profileSkipBtn').style.display = 'block';
+  } else {
+    document.getElementById('profileIdInput').value = '';
+    document.getElementById('profileAgeInput').value = '';
+    document.getElementById('profileGenderInput').value = '';
+    document.getElementById('profileExerciseInput').value = '';
+    document.getElementById('profileSkipBtn').style.display = 'none';
+  }
+  document.getElementById('profileOverlay').classList.remove('hidden');
+}
+
+function closeProfileModal() {
+  document.getElementById('profileOverlay').classList.add('hidden');
+}
+
+function saveProfile() {
+  var id = document.getElementById('profileIdInput').value.trim();
+  if (!id) { alert('ニックネーム（ID）を入力してください'); return; }
+  var db = dbLoad();
+  db.profile = {
+    id: id,
+    ageGroup:      document.getElementById('profileAgeInput').value,
+    gender:        document.getElementById('profileGenderInput').value,
+    exerciseHabit: document.getElementById('profileExerciseInput').value,
+    createdAt:     db.profile ? db.profile.createdAt : new Date().toISOString().slice(0,10)
+  };
+  dbSave(db);
+  updateProfileUI();
+  closeProfileModal();
+}
+
+function updateProfileUI() {
+  var db = dbLoad();
+  var label = document.getElementById('profileBtnLabel');
+  var histLabel = document.getElementById('historyProfileLabel');
+  if (db.profile && db.profile.id) {
+    label.textContent = db.profile.id;
+    histLabel.innerHTML = '<span class="history-profile-id">👤 ' + db.profile.id + '</span>'
+      + (db.profile.ageGroup ? '　' + db.profile.ageGroup : '')
+      + (db.profile.gender   ? '　' + db.profile.gender   : '')
+      + (db.profile.exerciseHabit ? '　' + db.profile.exerciseHabit : '');
+  } else {
+    label.textContent = '登録';
+    histLabel.textContent = 'ゲスト（未登録）';
+  }
+}
+
+// ─── Fatigue ───────────────────────────────────────────────
+var currentFatigue = 0;
+
+function selectFatigue(n) {
+  currentFatigue = n;
+  document.querySelectorAll('.fatigue-btn').forEach(function(btn, i) {
+    btn.classList.toggle('active', i + 1 === n);
+  });
+}
+
+function resetFatigue() {
+  currentFatigue = 0;
+  document.querySelectorAll('.fatigue-btn').forEach(function(btn) {
+    btn.classList.remove('active');
+  });
+}
+
+// ─── Session save ──────────────────────────────────────────
+function saveSession(score, reps, target, good, warn, bad) {
+  var db = dbLoad();
+  db.sessions.push({
+    date:       new Date().toISOString(),
+    score:      score,
+    reps:       reps,
+    targetReps: target,
+    fatigue:    currentFatigue,
+    good:       good,
+    warn:       warn,
+    bad:        bad
+  });
+  dbSave(db);
+}
+
+// ─── History render ────────────────────────────────────────
+var FATIGUE_EMOJI = ['', '😊', '🙂', '😐', '😓', '😩'];
+var FATIGUE_TEXT  = ['', '楽々', '余裕', '普通', 'きつい', '限界'];
+
+function renderHistory() {
+  updateProfileUI();
+  var db = dbLoad();
+  var el = document.getElementById('historyList');
+  if (!db.sessions || db.sessions.length === 0) {
+    el.innerHTML = '<div class="history-empty">まだ記録がありません<br>セッションを完了すると自動で保存されます</div>';
+    return;
+  }
+  var items = db.sessions.slice().reverse();
+  var html = '<div class="history-list">';
+  items.forEach(function(s) {
+    var d = new Date(s.date);
+    var dateStr = d.getFullYear() + '/' + pad(d.getMonth()+1) + '/' + pad(d.getDate())
+                + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    var scoreColor = s.score >= 80 ? 'var(--good)' : s.score >= 60 ? 'var(--warn)' : 'var(--bad)';
+    var fatigueHtml = s.fatigue
+      ? '<div class="history-fatigue">' + FATIGUE_EMOJI[s.fatigue] + '</div>'
+        + '<div class="history-fatigue-lbl">' + FATIGUE_TEXT[s.fatigue] + '</div>'
+      : '<div class="history-fatigue-lbl" style="color:var(--text-dim)">未記録</div>';
+    html += '<div class="history-item">'
+      + '<div class="history-score" style="color:' + scoreColor + '">' + s.score + '</div>'
+      + '<div class="history-info">'
+      +   '<div class="history-date">' + dateStr + '</div>'
+      +   '<div class="history-reps">' + s.reps + ' / ' + s.targetReps + ' 回　'
+      +     '✅' + s.good + ' ⚠️' + s.warn + ' ❌' + s.bad + '</div>'
+      + '</div>'
+      + '<div class="history-right">' + fatigueHtml + '</div>'
+      + '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+function clearHistory() {
+  if (!confirm('履歴をすべて削除しますか？')) return;
+  var db = dbLoad();
+  db.sessions = [];
+  dbSave(db);
+  renderHistory();
+}
+
+// ─── Auto-init ─────────────────────────────────────────────
+(function init() {
+  updateProfileUI();
+  var db = dbLoad();
+  if (!db.profile) {
+    // 初回起動時にプロフィール設定を促す（少し遅らせて画面描画後に表示）
+    setTimeout(openProfileModal, 600);
+  }
+})();
+</script>
+</body>
+</html>
