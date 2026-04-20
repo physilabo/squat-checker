@@ -1073,48 +1073,51 @@ function handleConsentNext() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// ─── ID availability check (mock – Phase 2 で API に差替) ──
+// ─── ID availability check (Phase 2 – Cloudflare Workers API) ──
 // ═══════════════════════════════════════════════════════════
 async function checkIdAvailability(id) {
-  // フェーズ2でここを Cloudflare Workers API 呼び出しに置き換える
-  // 現在は localStorage 内の既存IDと重複しないかだけチェック
-  return Promise.resolve({ available: true });
+  try {
+    var res = await fetch('https://squat-checker-api.physilabo.workers.dev/api/check-id?id=' + encodeURIComponent(id), {
+      headers: { 'X-App-Token': '569a036534fdde5da644d17ffbcec93ecba6fc03d76468e5216bd21d0d4a3a13' }
+    });
+    return await res.json();
+  } catch(e) {
+    console.warn('checkIdAvailability error:', e);
+    return { available: true };
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
-// ─── Data collection (Phase 2 で API 送信に差替) ────────────
+// ─── Data collection (Phase 2 – Cloudflare Workers API 送信) ──
 // ═══════════════════════════════════════════════════════════
-function collectSquatData() {
+async function collectSquatData() {
   try {
     var db = dbLoad();
     var profile = db.profile || {};
-    var scoreEl = document.getElementById('scoreNum');
-    var score = scoreEl ? parseInt(scoreEl.textContent) || 0 : 0;
-
-    // 各角度スコアの直近値を取得
-    var trunkScores = checkScoreAccum['pelvis-tilt'];
-    var hipScores   = checkScoreAccum['pelvis-rotation'];
-    var kneeScores  = checkScoreAccum['knee-toe'];
-    var ankleScores = checkScoreAccum['foot-contact'];
-    var lastScore = function(arr) { return arr.length ? arr[arr.length - 1] : 0; };
-
     var data = {
-      userId:      profile.id        || '未設定',
-      ageGroup:    profile.ageGroup   || '未回答',
-      gender:      profile.gender     || '未回答',
-      sportsLevel: profile.sportsLevel|| '未回答',
-      totalScore:  score,
-      trunkScore:  lastScore(trunkScores),
-      hipScore:    lastScore(hipScores),
-      kneeScore:   lastScore(kneeScores),
-      ankleScore:  lastScore(ankleScores),
-      timestamp:   new Date().toISOString(),
-      repNo:       repCount
+      userId: profile.userId || '未設定',
+      ageGroup: profile.ageGroup || '未回答',
+      gender: profile.gender || '未回答',
+      sportsLevel: profile.sportsLevel || '未回答',
+      totalScore: Math.round(currentScore || 0),
+      trunkScore: Math.round(scores.trunk || 0),
+      hipScore: Math.round(scores.hip || 0),
+      kneeScore: Math.round(scores.knee || 0),
+      ankleScore: Math.round(scores.ankle || 0),
+      timestamp: new Date().toISOString(),
+      repNo: repCount || 0
     };
-
-    // フェーズ2: ここで fetch('/api/save-data', { method:'POST', body: JSON.stringify(data) }) に差替
-    console.log('[SquatData]', JSON.stringify(data));
-  } catch(e) { console.warn('collectSquatData error:', e); }
+    fetch('https://squat-checker-api.physilabo.workers.dev/api/save-data', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-App-Token': '569a036534fdde5da644d17ffbcec93ecba6fc03d76468e5216bd21d0d4a3a13'
+      },
+      body: JSON.stringify(data)
+    }).catch(function(e) { console.warn('save-data error:', e); });
+  } catch(e) {
+    console.warn('collectSquatData error:', e);
+  }
 }
 
 // ─── Tab switching ─────────────────────────────────────────
