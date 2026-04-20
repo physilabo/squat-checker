@@ -633,6 +633,75 @@
   .history-right { text-align: right; }
   .history-fatigue { font-size: 16px; }
   .history-fatigue-lbl { font-size: 9px; color: var(--text-dim); }
+
+  /* ── Consent / Onboarding Screen ───────────────────── */
+  .onboarding-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    background: var(--bg);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start;
+    overflow-y: auto; padding: 32px 20px 40px;
+  }
+  .onboarding-overlay.hidden { display: none; }
+  .onboarding-logo {
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    letter-spacing: 2px; color: var(--accent);
+    text-transform: uppercase; margin-bottom: 28px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .onboarding-logo-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .onboarding-icon { font-size: 52px; margin-bottom: 12px; }
+  .onboarding-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; text-align: center; }
+  .onboarding-sub {
+    font-size: 13px; color: var(--text-dim); text-align: center;
+    line-height: 1.8; max-width: 320px; margin-bottom: 24px;
+  }
+  .onboarding-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px; width: 100%; max-width: 360px;
+    margin-bottom: 14px;
+  }
+  .onboarding-card-title {
+    font-size: 12px; color: var(--accent); font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px;
+  }
+  .onboarding-list { list-style: none; padding: 0; }
+  .onboarding-list li {
+    font-size: 12px; color: var(--text-dim); padding: 4px 0;
+    display: flex; gap: 8px; align-items: flex-start; line-height: 1.6;
+  }
+  .onboarding-list li::before { content: '•'; color: var(--accent); flex-shrink: 0; }
+  .consent-checks { width: 100%; max-width: 360px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 10px; }
+  .consent-check-item {
+    display: flex; align-items: flex-start; gap: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px;
+    cursor: pointer; transition: border-color 0.2s;
+  }
+  .consent-check-item.checked { border-color: var(--accent); }
+  .consent-check-item input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); margin-top: 2px; cursor: pointer; }
+  .consent-check-label { font-size: 12px; color: var(--text); line-height: 1.7; }
+  .consent-check-label a { color: var(--accent); }
+  .btn-consent-next {
+    width: 100%; max-width: 360px;
+    padding: 15px; border-radius: 10px;
+    background: var(--accent); border: none;
+    color: #0a0f1e; font-size: 15px; font-weight: 700;
+    cursor: pointer; font-family: 'Noto Sans JP', sans-serif;
+    opacity: 0.35; pointer-events: none; transition: opacity 0.2s;
+  }
+  .btn-consent-next.active { opacity: 1; pointer-events: auto; }
+
+  /* ── Sports level radio cards ───────────────────────── */
+  .radio-card-group { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 0; }
+  .radio-card {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; cursor: pointer;
+    font-size: 13px; color: var(--text); transition: border-color 0.15s;
+  }
+  .radio-card input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; flex-shrink: 0; }
+  .radio-card:has(input:checked) { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
 <body>
@@ -896,6 +965,47 @@
   </div>
 </div>
 
+<!-- Consent / Onboarding Screen -->
+<div class="onboarding-overlay" id="onboardingOverlay">
+  <div class="onboarding-logo"><div class="onboarding-logo-dot"></div>Squat Form Checker</div>
+  <div class="onboarding-icon">🏋️</div>
+  <div class="onboarding-title">はじめに</div>
+  <div class="onboarding-sub">このアプリはスクワットのフォームをAIでリアルタイム解析します。<br>より良いアプリとリハビリ研究のために、匿名のデータを収集させていただきます。</div>
+
+  <div class="onboarding-card">
+    <div class="onboarding-card-title">📊 収集するデータ</div>
+    <ul class="onboarding-list">
+      <li>スクワットのフォームスコア・関節角度（計測データ）</li>
+      <li>年代・性別・スポーツレベル（任意入力、匿名）</li>
+      <li>あなたが設定したID（本名不使用を推奨）</li>
+    </ul>
+  </div>
+
+  <div class="onboarding-card">
+    <div class="onboarding-card-title">🔒 収集しないデータ</div>
+    <ul class="onboarding-list">
+      <li>氏名・メールアドレス・電話番号などの個人情報</li>
+      <li>カメラ映像・画像（端末内でのみ処理、外部送信なし）</li>
+      <li>IPアドレス</li>
+    </ul>
+  </div>
+
+  <div class="consent-checks">
+    <label class="consent-check-item" id="consentItem1">
+      <input type="checkbox" id="consentCheck1" onchange="updateConsentBtn()">
+      <span class="consent-check-label">収集したデータをアプリ改善・リハビリテーション研究に使用することに同意します</span>
+    </label>
+    <label class="consent-check-item" id="consentItem2">
+      <input type="checkbox" id="consentCheck2" onchange="updateConsentBtn()">
+      <span class="consent-check-label"><a href="/privacy-policy/" target="_blank">プライバシーポリシー</a>に同意します</span>
+    </label>
+  </div>
+
+  <button class="btn-consent-next" id="btnConsentNext" onclick="handleConsentNext()">
+    同意して次へ →
+  </button>
+</div>
+
 <!-- Profile Modal -->
 <div class="profile-overlay hidden" id="profileOverlay">
   <div class="profile-modal">
@@ -927,14 +1037,13 @@
       </select>
     </div>
     <div class="profile-field">
-      <label>運動習慣（任意）</label>
-      <select id="profileExerciseInput">
-        <option value="">選択しない</option>
-        <option value="ほぼなし">ほぼなし</option>
-        <option value="週1〜2回">週1〜2回</option>
-        <option value="週3〜4回">週3〜4回</option>
-        <option value="週5回以上">週5回以上</option>
-      </select>
+      <label>スポーツレベル（任意）</label>
+      <div class="radio-card-group" id="profileSportsLevelGroup">
+        <label class="radio-card"><input type="radio" name="sportsLevel" value="ほとんどなし"> ほとんどなし</label>
+        <label class="radio-card"><input type="radio" name="sportsLevel" value="レクリエーション"> レクリエーション</label>
+        <label class="radio-card"><input type="radio" name="sportsLevel" value="趣味/地区大会"> 趣味・地区大会レベル</label>
+        <label class="radio-card"><input type="radio" name="sportsLevel" value="全国大会以上"> 全国大会以上</label>
+      </div>
     </div>
     <button class="profile-save-btn" onclick="saveProfile()">保存する</button>
     <span class="profile-skip" id="profileSkipBtn" onclick="closeProfileModal()">スキップ（ゲストとして続ける）</span>
@@ -943,6 +1052,71 @@
 </div>
 
 <script>
+// ═══════════════════════════════════════════════════════════
+// ─── Consent ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+function updateConsentBtn() {
+  var c1 = document.getElementById('consentCheck1').checked;
+  var c2 = document.getElementById('consentCheck2').checked;
+  var btn = document.getElementById('btnConsentNext');
+  btn.classList.toggle('active', c1 && c2);
+  document.getElementById('consentItem1').classList.toggle('checked', c1);
+  document.getElementById('consentItem2').classList.toggle('checked', c2);
+}
+
+function handleConsentNext() {
+  try { localStorage.setItem('squat_consent', 'true'); } catch(e) {}
+  document.getElementById('onboardingOverlay').classList.add('hidden');
+  // プロフィール未設定なら設定モーダルを表示
+  var db = dbLoad();
+  if (!db.profile) setTimeout(openProfileModal, 400);
+}
+
+// ═══════════════════════════════════════════════════════════
+// ─── ID availability check (mock – Phase 2 で API に差替) ──
+// ═══════════════════════════════════════════════════════════
+async function checkIdAvailability(id) {
+  // フェーズ2でここを Cloudflare Workers API 呼び出しに置き換える
+  // 現在は localStorage 内の既存IDと重複しないかだけチェック
+  return Promise.resolve({ available: true });
+}
+
+// ═══════════════════════════════════════════════════════════
+// ─── Data collection (Phase 2 で API 送信に差替) ────────────
+// ═══════════════════════════════════════════════════════════
+function collectSquatData() {
+  try {
+    var db = dbLoad();
+    var profile = db.profile || {};
+    var scoreEl = document.getElementById('scoreNum');
+    var score = scoreEl ? parseInt(scoreEl.textContent) || 0 : 0;
+
+    // 各角度スコアの直近値を取得
+    var trunkScores = checkScoreAccum['pelvis-tilt'];
+    var hipScores   = checkScoreAccum['pelvis-rotation'];
+    var kneeScores  = checkScoreAccum['knee-toe'];
+    var ankleScores = checkScoreAccum['foot-contact'];
+    var lastScore = function(arr) { return arr.length ? arr[arr.length - 1] : 0; };
+
+    var data = {
+      userId:      profile.id        || '未設定',
+      ageGroup:    profile.ageGroup   || '未回答',
+      gender:      profile.gender     || '未回答',
+      sportsLevel: profile.sportsLevel|| '未回答',
+      totalScore:  score,
+      trunkScore:  lastScore(trunkScores),
+      hipScore:    lastScore(hipScores),
+      kneeScore:   lastScore(kneeScores),
+      ankleScore:  lastScore(ankleScores),
+      timestamp:   new Date().toISOString(),
+      repNo:       repCount
+    };
+
+    // フェーズ2: ここで fetch('/api/save-data', { method:'POST', body: JSON.stringify(data) }) に差替
+    console.log('[SquatData]', JSON.stringify(data));
+  } catch(e) { console.warn('collectSquatData error:', e); }
+}
+
 // ─── Tab switching ─────────────────────────────────────────
 function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach((b, i) => {
@@ -1308,6 +1482,7 @@ function countRep(avgKnee) {
     phaseEl.textContent='立位'; badge.textContent='✓ '+repCount+'回完了！';
     updateProgress();
     updateStats();
+    collectSquatData();
 
     if(repCount>=targetReps){
       sessionComplete=true;
@@ -1585,7 +1760,10 @@ function openProfileModal() {
     document.getElementById('profileIdInput').value = p.id || '';
     document.getElementById('profileAgeInput').value = p.ageGroup || '';
     document.getElementById('profileGenderInput').value = p.gender || '';
-    document.getElementById('profileExerciseInput').value = p.exerciseHabit || '';
+    // スポーツレベルのラジオボタンを復元
+    document.querySelectorAll('input[name="sportsLevel"]').forEach(function(r) {
+      r.checked = (r.value === (p.sportsLevel || ''));
+    });
     document.getElementById('profileSkipBtn').style.display = 'block';
   } else {
     document.getElementById('profileIdInput').value = '';
@@ -1604,13 +1782,15 @@ function closeProfileModal() {
 function saveProfile() {
   var id = document.getElementById('profileIdInput').value.trim();
   if (!id) { alert('ニックネーム（ID）を入力してください'); return; }
+  if (id.length < 2 || id.length > 20) { alert('IDは2〜20文字で入力してください'); return; }
+  var sportsChecked = document.querySelector('input[name="sportsLevel"]:checked');
   var db = dbLoad();
   db.profile = {
-    id: id,
-    ageGroup:      document.getElementById('profileAgeInput').value,
-    gender:        document.getElementById('profileGenderInput').value,
-    exerciseHabit: document.getElementById('profileExerciseInput').value,
-    createdAt:     db.profile ? db.profile.createdAt : new Date().toISOString().slice(0,10)
+    id:           id,
+    ageGroup:     document.getElementById('profileAgeInput').value,
+    gender:       document.getElementById('profileGenderInput').value,
+    sportsLevel:  sportsChecked ? sportsChecked.value : '',
+    createdAt:    db.profile ? db.profile.createdAt : new Date().toISOString().slice(0,10)
   };
   dbSave(db);
   updateProfileUI();
@@ -1624,9 +1804,9 @@ function updateProfileUI() {
   if (db.profile && db.profile.id) {
     label.textContent = db.profile.id;
     histLabel.innerHTML = '<span class="history-profile-id">👤 ' + db.profile.id + '</span>'
-      + (db.profile.ageGroup ? '　' + db.profile.ageGroup : '')
-      + (db.profile.gender   ? '　' + db.profile.gender   : '')
-      + (db.profile.exerciseHabit ? '　' + db.profile.exerciseHabit : '');
+      + (db.profile.ageGroup    ? '　' + db.profile.ageGroup    : '')
+      + (db.profile.gender      ? '　' + db.profile.gender      : '')
+      + (db.profile.sportsLevel ? '　' + db.profile.sportsLevel : '');
   } else {
     label.textContent = '登録';
     histLabel.textContent = 'ゲスト（未登録）';
@@ -1716,10 +1896,19 @@ function clearHistory() {
 // ─── Auto-init ─────────────────────────────────────────────
 (function init() {
   updateProfileUI();
-  var db = dbLoad();
-  if (!db.profile) {
-    // 初回起動時にプロフィール設定を促す（少し遅らせて画面描画後に表示）
-    setTimeout(openProfileModal, 600);
+  var consented = false;
+  try { consented = localStorage.getItem('squat_consent') === 'true'; } catch(e) {}
+
+  if (!consented) {
+    // 未同意 → 同意画面を表示（プロフィールモーダルは同意後に表示）
+    document.getElementById('onboardingOverlay').classList.remove('hidden');
+  } else {
+    // 同意済み → 同意画面を非表示
+    document.getElementById('onboardingOverlay').classList.add('hidden');
+    var db = dbLoad();
+    if (!db.profile) {
+      setTimeout(openProfileModal, 600);
+    }
   }
 })();
 </script>
