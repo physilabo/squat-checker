@@ -959,7 +959,7 @@
       </div>
     </div>
     <div class="modal-actions">
-      <button class="btn-modal secondary" onclick="resetToStart()">やり直す</button>
+      <button class="btn-modal secondary" onclick="resetToStart()">終了</button>
       <button class="btn-modal primary" onclick="restartSession()">もう1セット</button>
     </div>
   </div>
@@ -1095,7 +1095,7 @@ async function collectSquatData() {
     var db = dbLoad();
     var profile = db.profile || {};
     var data = {
-      userId: profile.userId || '未設定',
+      userId: profile.id || profile.userId || '未設定',
       ageGroup: profile.ageGroup || '未回答',
       gender: profile.gender || '未回答',
       sportsLevel: profile.sportsLevel || '未回答',
@@ -1104,6 +1104,14 @@ async function collectSquatData() {
       hipScore: Math.round(scores.hip || 0),
       kneeScore: Math.round(scores.knee || 0),
       ankleScore: Math.round(scores.ankle || 0),
+      // 新規追加：最深部の関節角度データ
+      leftKneeAngle: deepestPoseData.leftKneeAngle || null,
+      rightKneeAngle: deepestPoseData.rightKneeAngle || null,
+      leftHipAngle: deepestPoseData.leftHipAngle || null,
+      rightHipAngle: deepestPoseData.rightHipAngle || null,
+      leftAnkleAngle: deepestPoseData.leftAnkleAngle || null,
+      rightAnkleAngle: deepestPoseData.rightAnkleAngle || null,
+      trunkAngle: deepestPoseData.trunkAngle || null,
       timestamp: new Date().toISOString(),
       repNo: repCount || 0
     };
@@ -1157,6 +1165,10 @@ let prevKneeAngles = [];
 const SMOOTH_WINDOW = 10;
 let sessionComplete = false;
 
+// ─── Deepest pose data (最深部の関節角度) ─────────────────────
+let deepestPoseData = {};
+let currentRepDeepest = { hipY: -Infinity, data: null };
+
 // Per-check accumulators for report
 const checkNames = ['face-forward','trunk-tilt','pelvis-rotation','foot-contact','pelvis-tilt','smoothness','trunk-shin','knee-toe'];
 const checkLabels = ['顔は前を向く','体幹が左右に傾かない','骨盤回旋なし','足底全面接地','骨盤が前傾している','動作がスムース','体幹と下腿が平行','膝とつま先の向きが一致'];
@@ -1175,6 +1187,22 @@ function angleFromVertical(top, bottom) {
   return Math.round(Math.abs(Math.atan2(top.x-bottom.x, -(top.y-bottom.y))) * 180 / Math.PI);
 }
 function lerp(a,b,t) { return a+(b-a)*t; }
+
+// 3点から角度を計算（度数）
+function calculateAngle(a, b, c) {
+    var radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+    var angle = Math.abs(radians * 180.0 / Math.PI);
+    if (angle > 180.0) angle = 360 - angle;
+    return Math.round(angle);
+}
+
+// 垂直軸に対する体幹角度を計算
+function calculateTrunkAngle(shoulder, hip) {
+    var dx = hip.x - shoulder.x;
+    var dy = hip.y - shoulder.y;
+    var angle = Math.atan2(Math.abs(dx), Math.abs(dy)) * 180 / Math.PI;
+    return Math.round(angle);
+}
 
 // ─── Camera ────────────────────────────────────────────────
 async function startCamera() {
@@ -1362,6 +1390,37 @@ function analyzeForm(lm) {
   updateAngle2('trunk',trunkAngle,0,90); updateAngle2('shin',shinAngle,0,90);
 
   const avgKnee=(kneeR+kneeL)/2;
+
+  // 最深部データを毎フレーム更新（下降フェーズ中の最大股関節Y座標を記録）
+  if (repPhase === 'down') {
+    var avgHipY = (lHip.y + rHip.y) / 2;
+    if (avgHipY > currentRepDeepest.hipY) {
+      currentRepDeepest.hipY = avgHipY;
+      // カメラがミラー表示（frontカメラ）の場合、画面左右が解剖学的左右と逆になる
+      // currentFacing==='user'の場合、画面の左がユーザーの右になる
+      var isMirror = (currentFacing === 'user');
+      var lKneeAngle = calculateAngle(lHip, lKnee, lAnkle);
+      var rKneeAngle = calculateAngle(rHip, rKnee, rAnkle);
+      var lHipAngle  = calculateAngle(lSh, lHip, lKnee);
+      var rHipAngle  = calculateAngle(rSh, rHip, rKnee);
+      var rFoot2 = lm[L.RIGHT_FOOT_INDEX];
+      var lAnkleAngle = lFoot ? calculateAngle(lKnee, lAnkle, lFoot) : null;
+      var rAnkleAngle = rFoot2 ? calculateAngle(rKnee, rAnkle, rFoot2) : null;
+      var midShDeep = {x:(lSh.x+rSh.x)/2, y:(lSh.y+rSh.y)/2};
+      var midHipDeep = {x:(lHip.x+rHip.x)/2, y:(lHip.y+rHip.y)/2};
+      var tAngle = calculateTrunkAngle(midShDeep, midHipDeep);
+      currentRepDeepest.data = {
+        leftKneeAngle:  isMirror ? rKneeAngle : lKneeAngle,
+        rightKneeAngle: isMirror ? lKneeAngle : rKneeAngle,
+        leftHipAngle:   isMirror ? rHipAngle  : lHipAngle,
+        rightHipAngle:  isMirror ? lHipAngle  : rHipAngle,
+        leftAnkleAngle: isMirror ? rAnkleAngle : lAnkleAngle,
+        rightAnkleAngle: isMirror ? lAnkleAngle : rAnkleAngle,
+        trunkAngle: tAngle
+      };
+    }
+  }
+
   countRep(avgKnee);
   prevKneeAngles.push(avgKnee);
   if (prevKneeAngles.length > SMOOTH_WINDOW) prevKneeAngles.shift();
@@ -1399,12 +1458,20 @@ function analyzeForm(lm) {
   }
 
   // 4. Foot contact
-  if (lHeel&&rHeel&&lFoot&&rFoot) {
-    const ankH=Math.abs(midKnee.y-midAnkle.y);
-    const fr=Math.max(Math.abs(lHeel.y-lFoot.y),Math.abs(rHeel.y-rFoot.y))/Math.max(ankH,0.001);
-    let s; if(fr<0.08){s=100;updateCheck('foot-contact','good','全面接地',`足底差:${(fr*100).toFixed(0)}%`);}
-    else if(fr<0.15){s=60;updateCheck('foot-contact','warn','やや浮き気味',`足底差:${(fr*100).toFixed(0)}%`);}
-    else{s=0;updateCheck('foot-contact','bad','踵が浮いています',`足底差:${(fr*100).toFixed(0)}%`);}
+  // 正面カメラではHEEL/FOOT_INDEXのY座標差が不安定なため、
+  // HEELのvisibilityスコアで接地判定する（正面から見えているかかと＝接地している）
+  {
+    const lHeelVis = (lHeel && lHeel.visibility != null) ? lHeel.visibility : 0;
+    const rHeelVis = (rHeel && rHeel.visibility != null) ? rHeel.visibility : 0;
+    const avgHeelVis = (lHeelVis + rHeelVis) / 2;
+    let s;
+    if (avgHeelVis >= 0.7) {
+      s = 100; updateCheck('foot-contact', 'good', '全足底接地', `かかとvis:${(avgHeelVis*100).toFixed(0)}%`);
+    } else if (avgHeelVis >= 0.4) {
+      s = 60; updateCheck('foot-contact', 'warn', 'やや不安定', `かかとvis:${(avgHeelVis*100).toFixed(0)}%`);
+    } else {
+      s = 30; updateCheck('foot-contact', 'warn', '判定困難（正面カメラ）', `かかとvis:${(avgHeelVis*100).toFixed(0)}%`);
+    }
     totalScore+=s; items++; checkScoreAccum['foot-contact'].push(s);
   }
 
@@ -1478,8 +1545,15 @@ function countRep(avgKnee) {
   const badge=document.getElementById('phaseBadge');
 
   if(repPhase==='stand'&&avgKnee<130){
-    repPhase='down'; phaseEl.textContent='しゃがみ中...'; badge.textContent='▼ 下降';
+    repPhase='down';
+    // 下降フェーズ開始時に最深部バッファをリセット
+    currentRepDeepest = { hipY: -Infinity, data: null };
+    phaseEl.textContent='しゃがみ中...'; badge.textContent='▼ 下降';
   } else if(repPhase==='down'&&avgKnee>155){
+    // 最深部データを確定
+    if (currentRepDeepest.data) {
+      deepestPoseData = currentRepDeepest.data;
+    }
     repPhase='stand'; repCount++;
     document.getElementById('repCount').textContent=repCount;
     phaseEl.textContent='立位'; badge.textContent='✓ '+repCount+'回完了！';
@@ -1568,6 +1642,14 @@ function showResultModal(aborted = false) {
   }
 
   resetFatigue();
+
+  // セッション完了データをGoogle Sheetsに送信（通常完了・中止完了の両方）
+  // ※中止完了（confirmAbort）では collectSquatData() が既に呼ばれているが
+  //   showResultModal 内でも送信することで確実に記録する（冪等）
+  if (!aborted) {
+    collectSquatData();
+  }
+
   document.getElementById('resultModal').classList.add('show');
 
   // セッションデータを一時保持（疲労感選択後に保存）
@@ -1593,6 +1675,8 @@ function restartSession() {
   goodCount=0; warnCount=0; badCount=0;
   sessionComplete=false;
   prevKneeAngles=[];
+  deepestPoseData={};
+  currentRepDeepest={ hipY: -Infinity, data: null };
   checkNames.forEach(n => checkScoreAccum[n]=[]);
   document.getElementById('repCount').textContent='0';
   document.getElementById('repPhase').textContent='立位';
@@ -1602,6 +1686,8 @@ function restartSession() {
   document.getElementById('stat-avg').textContent='--';
   updateProgress();
   document.getElementById('phaseBadge').textContent='▲ スクワット開始';
+  // カメラは止めず、立ち位置確認画面（準備画面）に戻す
+  showPositionCheck();
 }
 
 // ─── Stop / Abort ──────────────────────────────────────────
@@ -1617,6 +1703,8 @@ function closeAbortMenu() {
 function confirmAbort() {
   closeAbortMenu();
   sessionComplete = true;
+  // 中止時も最新スコアをGoogle Sheetsに送信してからモーダルを表示
+  collectSquatData();
   showResultModal(true);
 }
 
