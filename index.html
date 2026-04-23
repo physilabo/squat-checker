@@ -371,6 +371,12 @@
   }
   .angle-range { display: flex; justify-content: space-between; margin-top: 3px; }
   .angle-range span { font-size: 9px; color: var(--text-dim); font-family: 'DM Mono', monospace; }
+  .angle-range .rom-ref { color: var(--good); opacity: 0.85; font-size: 9px; }
+  .rom-legend { display: flex; gap: 10px; font-size: 9px; margin-bottom: 8px; }
+  .rom-legend-item { display: flex; align-items: center; gap: 3px; color: var(--text-dim); }
+  .rom-dot-good { width: 8px; height: 8px; border-radius: 2px; background: rgba(0,212,170,0.45); flex-shrink: 0; }
+  .rom-dot-warn { width: 8px; height: 8px; border-radius: 2px; background: rgba(255,209,102,0.45); flex-shrink: 0; }
+  .rom-source { font-size: 9px; color: var(--text-dim); opacity: 0.6; margin-left: auto; }
 
   .rep-row { display: flex; align-items: center; gap: 16px; }
   .rep-counter { display: flex; align-items: baseline; gap: 6px; }
@@ -880,13 +886,18 @@
     <div class="tab-content" id="tab-angle">
       <div class="panel-section">
         <div class="section-label">関節角度</div>
+        <div class="rom-legend">
+          <div class="rom-legend-item"><div class="rom-dot-good"></div>目標範囲</div>
+          <div class="rom-legend-item"><div class="rom-dot-warn"></div>やや範囲外</div>
+          <span class="rom-source">日整会ROM基準</span>
+        </div>
         <div class="angle-meters">
-          <div class="angle-meter"><div class="angle-head"><span class="angle-name">右膝関節</span><span class="angle-val" id="angle-knee-r">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-knee-r" style="width:0%"></div></div><div class="angle-range"><span>0°</span><span>180°</span></div></div>
-          <div class="angle-meter"><div class="angle-head"><span class="angle-name">左膝関節</span><span class="angle-val" id="angle-knee-l">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-knee-l" style="width:0%"></div></div><div class="angle-range"><span>0°</span><span>180°</span></div></div>
-          <div class="angle-meter"><div class="angle-head"><span class="angle-name">右股関節</span><span class="angle-val" id="angle-hip-r">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-hip-r" style="width:0%"></div></div><div class="angle-range"><span>0°</span><span>180°</span></div></div>
-          <div class="angle-meter"><div class="angle-head"><span class="angle-name">左股関節</span><span class="angle-val" id="angle-hip-l">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-hip-l" style="width:0%"></div></div><div class="angle-range"><span>0°</span><span>180°</span></div></div>
-          <div class="angle-meter"><div class="angle-head"><span class="angle-name">体幹前傾</span><span class="angle-val" id="angle-trunk">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-trunk" style="width:0%"></div></div><div class="angle-range"><span>0°</span><span>90°</span></div></div>
-          <div class="angle-meter"><div class="angle-head"><span class="angle-name">下腿前傾</span><span class="angle-val" id="angle-shin">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-shin" style="width:0%"></div></div><div class="angle-range"><span>0°</span><span>90°</span></div></div>
+          <div class="angle-meter"><div class="angle-head"><span class="angle-name">右膝関節 <span style="opacity:0.55;font-size:9px">屈曲ROM130°</span></span><span class="angle-val" id="angle-knee-r">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-knee-r" style="width:0%"></div></div><div class="angle-range"><span>最大屈曲</span><span class="rom-ref">目標70-110°</span><span>完全伸展</span></div></div>
+          <div class="angle-meter"><div class="angle-head"><span class="angle-name">左膝関節 <span style="opacity:0.55;font-size:9px">屈曲ROM130°</span></span><span class="angle-val" id="angle-knee-l">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-knee-l" style="width:0%"></div></div><div class="angle-range"><span>最大屈曲</span><span class="rom-ref">目標70-110°</span><span>完全伸展</span></div></div>
+          <div class="angle-meter"><div class="angle-head"><span class="angle-name">右股関節 <span style="opacity:0.55;font-size:9px">屈曲ROM125°</span></span><span class="angle-val" id="angle-hip-r">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-hip-r" style="width:0%"></div></div><div class="angle-range"><span>最大屈曲</span><span class="rom-ref">目標65-105°</span><span>完全伸展</span></div></div>
+          <div class="angle-meter"><div class="angle-head"><span class="angle-name">左股関節 <span style="opacity:0.55;font-size:9px">屈曲ROM125°</span></span><span class="angle-val" id="angle-hip-l">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-hip-l" style="width:0%"></div></div><div class="angle-range"><span>最大屈曲</span><span class="rom-ref">目標65-105°</span><span>完全伸展</span></div></div>
+          <div class="angle-meter"><div class="angle-head"><span class="angle-name">体幹前傾</span><span class="angle-val" id="angle-trunk">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-trunk" style="width:0%"></div></div><div class="angle-range"><span>垂直0°</span><span class="rom-ref">目標15-45°</span><span>90°</span></div></div>
+          <div class="angle-meter"><div class="angle-head"><span class="angle-name">下腿前傾</span><span class="angle-val" id="angle-shin">---°</span></div><div class="angle-bar-bg"><div class="angle-bar-fill" id="bar-shin" style="width:0%"></div></div><div class="angle-range"><span>垂直0°</span><span class="rom-ref">目標10-35°</span><span>90°</span></div></div>
         </div>
       </div>
     </div>
@@ -1995,8 +2006,39 @@ function clearHistory() {
 }
 
 // ─── Auto-init ─────────────────────────────────────────────
+// 日本整形外科学会 関節可動域表示の手引き（ROM基準）に基づくスクワット評価ゾーン
+// 角度は内角表示（0°=最大屈曲, 180°=完全伸展）
+// 膝屈曲ROM130° → 最大屈曲内角50°、スクワット目標70-110°
+// 股屈曲ROM125° → 最大屈曲内角55°、スクワット目標65-105°
+const ROM_CONFIG = {
+  'knee-r': {min:0, max:180, goodMin:70, goodMax:110, warnMax:130},
+  'knee-l': {min:0, max:180, goodMin:70, goodMax:110, warnMax:130},
+  'hip-r':  {min:0, max:180, goodMin:65, goodMax:105, warnMax:130},
+  'hip-l':  {min:0, max:180, goodMin:65, goodMax:105, warnMax:130},
+  'trunk':  {min:0, max:90,  goodMin:15, goodMax:45,  warnMax:55},
+  'shin':   {min:0, max:90,  goodMin:10, goodMax:35,  warnMax:45},
+};
+
+function initROMBars() {
+  Object.entries(ROM_CONFIG).forEach(([id, cfg]) => {
+    const bg = document.getElementById('bar-'+id)?.parentElement;
+    if (!bg) return;
+    const {min, max, goodMin, goodMax, warnMax} = cfg;
+    const pct = v => ((v - min) / (max - min) * 100).toFixed(1);
+    bg.style.background = `linear-gradient(to right,
+      var(--surface2) 0%,
+      var(--surface2) ${pct(goodMin)}%,
+      rgba(0,212,170,0.28) ${pct(goodMin)}%,
+      rgba(0,212,170,0.28) ${pct(goodMax)}%,
+      rgba(255,209,102,0.22) ${pct(goodMax)}%,
+      rgba(255,209,102,0.22) ${pct(warnMax)}%,
+      var(--surface2) ${pct(warnMax)}%)`;
+  });
+}
+
 (function init() {
   updateProfileUI();
+  initROMBars();
   var consented = false;
   try { consented = localStorage.getItem('squat_consent') === 'true'; } catch(e) {}
 
