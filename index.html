@@ -1094,16 +1094,26 @@ async function collectSquatData() {
   try {
     var db = dbLoad();
     var profile = db.profile || {};
+    // checkScoreAccum から各カテゴリスコアを算出するヘルパー
+    var calcAvg = function(names) {
+      var vals = [];
+      names.forEach(function(n) {
+        var arr = checkScoreAccum[n] || [];
+        if (arr.length) vals.push(arr.reduce(function(a,b){return a+b;},0)/arr.length);
+      });
+      return vals.length ? Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length) : 0;
+    };
+    var totalScoreVal = repScores.length ? Math.round(repScores.reduce(function(a,b){return a+b;},0)/repScores.length) : (parseInt(document.getElementById('scoreNum').textContent)||0);
     var data = {
       userId: profile.id || profile.userId || '未設定',
       ageGroup: profile.ageGroup || '未回答',
       gender: profile.gender || '未回答',
       sportsLevel: profile.sportsLevel || '未回答',
-      totalScore: Math.round(currentScore || 0),
-      trunkScore: Math.round(scores.trunk || 0),
-      hipScore: Math.round(scores.hip || 0),
-      kneeScore: Math.round(scores.knee || 0),
-      ankleScore: Math.round(scores.ankle || 0),
+      totalScore: totalScoreVal,
+      trunkScore: calcAvg(['trunk-tilt','trunk-shin']),
+      hipScore: calcAvg(['pelvis-tilt','pelvis-rotation']),
+      kneeScore: calcAvg(['knee-toe']),
+      ankleScore: calcAvg(['foot-contact']),
       // 新規追加：最深部の関節角度データ
       leftKneeAngle: deepestPoseData.leftKneeAngle || null,
       rightKneeAngle: deepestPoseData.rightKneeAngle || null,
