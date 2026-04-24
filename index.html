@@ -1089,7 +1089,7 @@ function handleConsentNext() {
 async function checkIdAvailability(id) {
   try {
     var res = await fetch('https://squat-checker-api.physilabo.workers.dev/api/check-id?id=' + encodeURIComponent(id), {
-      headers: { 'X-App-Token': '569a036534fdde5da644d17ffbcec93ecba6fc03d76468e5216bd21d0d4a3a13' }
+      headers: { 'X-App-Token': 'a9bbe79c493c3128ee07cc1f88aa17c3611016025e38eb2010fbb93afaa3c9f3' }
     });
     return await res.json();
   } catch(e) {
@@ -1140,7 +1140,7 @@ async function collectSquatData() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-App-Token': '569a036534fdde5da644d17ffbcec93ecba6fc03d76468e5216bd21d0d4a3a13'
+        'X-App-Token': 'a9bbe79c493c3128ee07cc1f88aa17c3611016025e38eb2010fbb93afaa3c9f3'
       },
       body: JSON.stringify(data)
     }).catch(function(e) { console.warn('save-data error:', e); });
